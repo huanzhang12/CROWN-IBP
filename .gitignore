@@ -1,0 +1,8 @@
+*.pth
+*.pyc
+*~
+*.swp
+__pycache__
+data
+*.h5
+*.hdf5
