@@ -1,5 +1,6 @@
 CROWN-IBP: Towards Stable and Efficient Training of Verifiably Robust Neural Networks
 ========================
+Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Duane Boning, and Cho-Jui Hsieh "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([https://arxiv.org/abs/1906.06316](https://arxiv.org/abs/1906.06316))
 
 CROWN-IBP is a certified defense to adversarial examples, which combines a
 tight linear relaxation based verification bound (CROWN) with the non-linear
