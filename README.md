@@ -1,12 +1,19 @@
 CROWN-IBP: Towards Stable and Efficient Training of Verifiably Robust Neural Networks
 ========================
-Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Duane Boning, and Cho-Jui Hsieh "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([https://arxiv.org/abs/1906.06316](https://arxiv.org/abs/1906.06316))
 
-CROWN-IBP is a certified defense to adversarial examples, which combines a
-tight linear relaxation based verification bound (CROWN) with the non-linear
-and efficient interval bound propagate (IBP) training method.  We achieved the
-best verifiable error on MNIST: **7.46\%** at `epsilon=0.3` and **12.96\%** at
-`epsilon=0.4` (L\_infinity norm distortion).
+CROWN-IBP is a *certified defense* to adversarial examples, which combines a
+tight linear relaxation based verification bound 
+([CROWN](http://arxiv.org/pdf/1811.00866.pdf)) with the non-linear and 
+efficient interval bound propagate ([IBP](https://arxiv.org/pdf/1810.12715.pdf)) 
+training method.  We achieved state-of-the-art *verified* (certified) error on MNIST: **7.46\%** at
+`epsilon=0.3` and **12.96\%** at `epsilon=0.4` (L\_infinity norm distortion). 
+The verified error is even lower than the unverified PGD error
+(around **12\%** at `epsilon=0.3`) provided by [Adversarial training by Madry et
+al.](https://github.com/MadryLab/mnist_challenge) using PGD-based adversarial
+training. More empirical results and algorithm details of CROWN-IBP can be 
+found in our paper:
+
+Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Duane Boning, and Cho-Jui Hsieh, "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([https://arxiv.org/abs/1906.06316](https://arxiv.org/abs/1906.06316))
 
 Our repository provides **high quality PyTorch implementations** of Pure-IBP,
 Natural-IBP [(Gowal et
@@ -40,7 +47,7 @@ CROWN-IBP combines [Interval Bound Propagation
 (IBP)](https://arxiv.org/abs/1810.12715) training (Gowal et al.  2018) and
 [CROWN (Zhang et al. 2018)](http://arxiv.org/pdf/1811.00866.pdf), a tight
 linear relaxation based verification method. Ordinary CROWN is very expensive
-for training, and it may also over-regularize the network.  IBP along
+for training, and it may also over-regularize the network.  IBP alone
 outperforms many existing linear relaxation based methods due to its non-linear
 representation power (see our paper for more explanation), however since IBP
 bounds are very loose at the beginning phase of training, training stability is
@@ -89,7 +96,7 @@ All hyperparameters can also be changed in the configuration JSON file.
 Pre-trained Models
 ----------------
 
-CROWN-IBP pretrained models used in our paper can be downloaded here:
+CROWN-IBP pretrained models used in our paper can be downloaded [here](https://download.huan-zhang.com/models/crown-ibp/models_crown-ibp.tar.gz):
 
 ```bash
 wget https://download.huan-zhang.com/models/crown-ibp/models_crown-ibp.tar.gz
@@ -197,6 +204,9 @@ this README. A full bibliography can be found in our paper.
 Gowal, S., Dvijotham, K., Stanforth, R., Bunel, R., Qin, C., Uesato, J., Mann,
 T., and Kohli, P. On the effectiveness of interval bound propagation for
 training verifiably robust models. arXiv preprint arXiv:1810.12715, 2018.
+
+Wong, Eric, and J. Zico Kolter. Provable defenses against adversarial examples
+via the convex outer adversarial polytope. ICML 2018.
 
 Madry, A., Makelov, A., Schmidt, L., Tsipras, D., and Vladu, A. Towards deep
 learning models resistant to adversarial attacks. In International Conference
