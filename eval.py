@@ -48,7 +48,7 @@ def main(args):
         eps = eval_config["epsilon"]
         # parameters specific to a training method
         method_param = eval_config["method_params"]
-        norm = eval_config["norm"]
+        norm = float(eval_config["norm"])
         train_data, test_data = config_dataloader(config, **eval_config["loader_params"])
 
         model_name = get_path(config, model_id, "model", load = False)
@@ -60,7 +60,7 @@ def main(args):
         logger.log("Evaluating...")
         with torch.no_grad():
             # evaluate
-            robust_err, err = Train(model, 0, test_data, eps, eps, eps, logger, verbose, False, None, method, **method_param)
+            robust_err, err = Train(model, 0, test_data, eps, eps, eps, norm, logger, verbose, False, None, method, **method_param)
         robust_errs.append(robust_err)
         errs.append(err)
 

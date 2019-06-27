@@ -50,7 +50,7 @@ class Logger(object):
             self.log_file.flush()
 
 
-def Train(model, t, loader, start_eps, end_eps, max_eps, logger, verbose, train, opt, method, **kwargs):
+def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, train, opt, method, **kwargs):
     # if train=True, use training mode
     # if train=False, use test mode, no back prop
     num_class = 10
@@ -110,16 +110,20 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, logger, verbose, train,
         # FIXME: Assume data is from range 0 - 1
         if kwargs["bounded_input"]:
             assert loader.std == [1,1,1] or loader.std == [1]
+            # bounded input only makes sense for Linf perturbation
+            assert norm == np.inf
             data_ub = (data + eps).clamp(max=1.0)
             data_lb = (data - eps).clamp(min=0.0)
         else:
-            data_ub = data + (eps / std)
-            data_lb = data - (eps / std)
+            if norm == np.inf:
+                data_ub = data + (eps / std)
+                data_lb = data - (eps / std)
 
         if list(model.parameters())[0].is_cuda:
             data = data.cuda()
-            data_ub = data_ub.cuda()
-            data_lb = data_lb.cuda()
+            if norm == np.inf:
+                data_ub = data_ub.cuda()
+                data_lb = data_lb.cuda()
             labels = labels.cuda()
             c = c.cuda()
             sa_labels = sa_labels.cuda()
@@ -136,16 +140,14 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, logger, verbose, train,
         # get range statistic
         model_range = output.max().detach().cpu().item() - output.min().detach().cpu().item()
         
-        """
-        ub, lb, _, _, _, _ = model.interval_range(data_lb, data_ub, c)
+        ub, lb, _, _, _, _ = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
         lb = lb_s.scatter(1, sa_labels, lb)
         print('interval ub: ', ub)
         print('interval lb: ', lb)
-        lb, _ = model.backward_range(data_lb, data_ub, c)
+        lb, _ = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
         lb = lb_s.scatter(1, sa_labels, lb)
         print('full lb: ', lb)
         input()
-        """
 
         if verbose or method != "natural":
             if kwargs["bound_type"] == "convex-adv":
@@ -172,9 +174,9 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, logger, verbose, train,
                 f = DualNetwork(model, data, convex_eps, proj = proj, norm_type = norm_type, bounded_input = kwargs["bounded_input"], data_l = data_l, data_u = data_u)
                 lb = f(c)
             elif kwargs["bound_type"] == "interval":
-                ub, lb, relu_activity, unstable, dead, alive = model.interval_range(data_lb, data_ub, c)
+                ub, lb, relu_activity, unstable, dead, alive = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
             elif kwargs["bound_type"] == "crown-interval":
-                ub, ilb, relu_activity, unstable, dead, alive = model.interval_range(data_lb, data_ub, c)
+                ub, ilb, relu_activity, unstable, dead, alive = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
                 crown_final_factor = kwargs['final-beta']
                 factor = (max_eps - eps * (1.0 - crown_final_factor)) / max_eps
                 if factor < 1e-5:
@@ -199,11 +201,11 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, logger, verbose, train,
                         runnerup_c = runnerup_c.unsqueeze(1).detach()
                         # print(runnerup_c)
                         # get the bound for runnerup_c
-                        clb, bias = model.backward_range(data_lb, data_ub, runnerup_c)
+                        clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
                         clb = clb.expand(clb.size(0), num_class - 1)
                     else:
                         # get the CROWN bound using interval bounds
-                        clb, bias = model.backward_range(data_lb, data_ub, c)
+                        clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
                         bound_bias.update(bias.sum() / data.size(0))
                     # how much better is crown-ibp better than ibp?
                     diff = (clb - ilb).sum().item()
@@ -343,7 +345,7 @@ def main(args):
         lr_decay_factor = train_config["lr_decay_factor"]
         # parameters specific to a training method
         method_param = train_config["method_params"]
-        norm = train_config["norm"]
+        norm = float(train_config["norm"])
         train_data, test_data = config_dataloader(config, **train_config["loader_params"])
 
         if optimizer == "adam":
@@ -383,14 +385,14 @@ def main(args):
             logger.log("Epoch {}, learning rate {}, epsilon {:.6f} - {:.6f}".format(t, lr_scheduler.get_lr(), epoch_start_eps, epoch_end_eps))
             # with torch.autograd.detect_anomaly():
             start_time = time.time()
-            Train(model, t, train_data, epoch_start_eps, epoch_end_eps, max_eps, logger, verbose, True, opt, method, **method_param)
+            Train(model, t, train_data, epoch_start_eps, epoch_end_eps, max_eps, norm, logger, verbose, True, opt, method, **method_param)
             epoch_time = time.time() - start_time
             timer += epoch_time
             logger.log('Epoch time: {:.4f}, Total time: {:.4f}'.format(epoch_time, timer))
             logger.log("Evaluating...")
             with torch.no_grad():
                 # evaluate
-                err, clean_err = Train(model, t, test_data, epoch_end_eps, epoch_end_eps, max_eps, logger, verbose, False, None, method, **method_param)
+                err, clean_err = Train(model, t, test_data, epoch_end_eps, epoch_end_eps, max_eps, norm, logger, verbose, False, None, method, **method_param)
 
             logger.log('saving to', model_name)
             torch.save({

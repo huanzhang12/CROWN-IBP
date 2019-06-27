@@ -271,7 +271,7 @@ class BoundSequential(Sequential):
     # @param x_L lower bound of input, shape (batch, *image_shape)
     # @param x_U upper bound of input, shape (batch, *image_shape)
     # @param C vector of specification, shape (batch, specification_size, output_size)
-    def backward_range(self, x_L, x_U, C):
+    def backward_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None):
         # start propagation from the last layer
         A, sum_b = list(self._modules.values())[-1].bound_backward(C)
         for i, module in enumerate(reversed(list(self._modules.values())[:-1])):
@@ -292,7 +292,7 @@ class BoundSequential(Sequential):
         lb = lb.squeeze(-1) + sum_b
         return lb, sum_b
 
-    def interval_range(self, x_L, x_U, C):
+    def interval_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None):
         h_U = x_U
         h_L = x_L
         losses = 0
