@@ -25,8 +25,8 @@ class BoundFlatten(torch.nn.Module):
         self.shape = x.size()[1:]
         return x.view(x.size(0), -1)
 
-    def interval_propagate(self, h_U, h_L):
-        return h_U.view(h_U.size(0), -1), h_L.view(h_L.size(0), -1), 0, 0, 0, 0
+    def interval_propagate(self, norm, h_U, h_L, eps):
+        return norm, h_U.view(h_U.size(0), -1), h_L.view(h_L.size(0), -1), 0, 0, 0, 0
 
     def bound_backward(self, last_A):
         return last_A.view(last_A.size(0), last_A.size(1), *self.shape), 0
@@ -53,30 +53,49 @@ class BoundLinear(Linear):
         logger.debug('sum_bias %s', sum_bias.size())
         return next_A, sum_bias
 
-    def interval_propagate(self, h_U, h_L, C = None):
-        mid = (h_U + h_L) / 2.0
-        diff = (h_U - h_L) / 2.0
+    def interval_propagate(self, norm, h_U, h_L, eps, C = None):
+        # merge the specification
         if C is not None:
-            weight = C.matmul(self.weight)
-            bias = C.matmul(self.bias)
-            weight_abs = weight.abs()
             # after multiplication with C, we have (batch, output_shape, prev_layer_shape)
             # we have batch dimension here because of each example has different C
-            center = weight.matmul(mid.unsqueeze(-1)) + bias.unsqueeze(-1)
-            deviation = weight_abs.matmul(diff.unsqueeze(-1))
-            center = center.squeeze(-1)
-            deviation = deviation.squeeze(-1)
+            weight = C.matmul(self.weight)
+            bias = C.matmul(self.bias)
         else:
             # weight dimension (this_layer_shape, prev_layer_shape)
             weight = self.weight
             bias = self.bias
+
+        if norm == np.inf:
+            # Linf norm
+            mid = (h_U + h_L) / 2.0
+            diff = (h_U - h_L) / 2.0
             weight_abs = weight.abs()
-            # fused multiply-add
-            center = torch.addmm(bias, mid, weight.t())
-            deviation = diff.matmul(weight_abs.t())
+            if C is not None:
+                center = weight.matmul(mid.unsqueeze(-1)) + bias.unsqueeze(-1)
+                deviation = weight_abs.matmul(diff.unsqueeze(-1))
+                # these have an extra (1,) dimension as the last dimension
+                center = center.squeeze(-1)
+                deviation = deviation.squeeze(-1)
+            else:
+                # fused multiply-add
+                center = torch.addmm(bias, mid, weight.t())
+                deviation = diff.matmul(weight_abs.t())
+        else:
+            # L2 norm
+            h = h_U # h_U = h_L, and eps is used
+            dual_norm = np.float64(1.0) / (1 - 1.0 / norm)
+            if C is not None:
+                center = weight.matmul(h.unsqueeze(-1)) + bias.unsqueeze(-1)
+                center = center.squeeze(-1)
+            else:
+                center = torch.addmm(bias, h, weight.t())
+            deviation = weight.norm(dual_norm, -1) * eps
+
         upper = center + deviation
         lower = center - deviation
-        return upper, lower, 0, 0, 0, 0
+        # output 
+        return np.inf, upper, lower, 0, 0, 0, 0
+            
 
 
 class BoundConv2d(Conv2d):
@@ -123,17 +142,27 @@ class BoundConv2d(Conv2d):
         logger.debug('sum_bias %s', sum_bias.size())
         return next_A, sum_bias
 
-    def interval_propagate(self, h_U, h_L):
-        mid = (h_U + h_L) / 2.0
-        diff = (h_U - h_L) / 2.0
-        weight_abs = self.weight.abs()
-        # bias has #filters parameters. Need to extend to (1, #out_C, #out_W, #out_H) (actually not necessary)
-        # bias = self.bias.view(self.bias.size(0),1,1).expand(self.output_shape).unsqueeze(0)
+    def interval_propagate(self, norm, h_U, h_L, eps):
+        if norm == np.inf:
+            mid = (h_U + h_L) / 2.0
+            diff = (h_U - h_L) / 2.0
+            weight_abs = self.weight.abs()
+            deviation = F.conv2d(diff, weight_abs, None, self.stride, self.padding, self.dilation, self.groups)
+        else:
+            # L2 norm
+            mid = h_U
+            logger.debug('mid %s', mid.size())
+            # TODO: consider padding here?
+            deviation = torch.mul(self.weight, self.weight).sum((1,2,3)).sqrt() * eps
+            logger.debug('weight %s', self.weight.size())
+            logger.debug('deviation %s', deviation.size())
+            deviation = deviation.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            logger.debug('unsqueezed deviation %s', deviation.size())
         center = F.conv2d(mid, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        deviation = F.conv2d(diff, weight_abs, None, self.stride, self.padding, self.dilation, self.groups)
+        logger.debug('center %s', center.size())
         upper = center + deviation
         lower = center - deviation
-        return upper, lower, 0, 0, 0, 0
+        return np.inf, upper, lower, 0, 0, 0, 0
     
 class BoundReLU(ReLU):
     def __init__(self, prev_layer, inplace=False):
@@ -149,11 +178,13 @@ class BoundReLU(ReLU):
         l = BoundReLU(prev_layer, act_layer.inplace)
         return l
 
-    def interval_propagate(self, h_U, h_L):
+    def interval_propagate(self, norm, h_U, h_L, eps):
+        assert norm == np.inf
         # return F.relu(h_U), F.relu(h_L), -torch.tanh(1 + h_U * h_L).sum(), ((h_U > 0) & (h_L < 0)).sum().detach().cpu().item(), \
         # return F.relu(h_U), F.relu(h_L), 0, ((h_U > 0) & (h_L < 0)).sum().detach().cpu().item(), \
         guard_eps = 1e-5
         self.unstab = ((h_L < -guard_eps) & (h_U > guard_eps))
+        # stored upper and lower bounds will be used for backward bound propagation
         self.upper_u = h_U
         self.lower_l = h_L
         """
@@ -163,7 +194,7 @@ class BoundReLU(ReLU):
         """
         tightness_loss = self.unstab.sum()
         # tightness_loss = torch.min(h_U_unstab * h_U_unstab, h_L_unstab * h_L_unstab).sum()
-        return F.relu(h_U), F.relu(h_L), tightness_loss, tightness_loss.detach().cpu().item(), \
+        return norm, F.relu(h_U), F.relu(h_L), tightness_loss, tightness_loss.detach().cpu().item(), \
                (h_U < 0).sum().detach().cpu().item(), (h_L > 0).sum().detach().cpu().item()
         # return F.relu(h_U), F.relu(h_L), ((h_U > 0) & (h_L < 0)).sum()
         # return F.relu(h_U), F.relu(h_L), h_U.numel()
@@ -268,8 +299,10 @@ class BoundSequential(Sequential):
 
 
     ## High level function, will be called outside
+    # @param norm perturbation norm (np.inf, 2)
     # @param x_L lower bound of input, shape (batch, *image_shape)
     # @param x_U upper bound of input, shape (batch, *image_shape)
+    # @param eps perturbation epsilon (not used for Linf)
     # @param C vector of specification, shape (batch, specification_size, output_size)
     def backward_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None):
         # start propagation from the last layer
@@ -280,33 +313,43 @@ class BoundSequential(Sequential):
             logger.debug('after: %s', A.size())
             sum_b += b
         A = A.view(A.size(0), A.size(1), -1)
-        x_U = x_U.view(x_U.size(0), -1, 1)
-        x_L = x_L.view(x_U.size(0), -1, 1)
-        center = (x_U + x_L) / 2.0
-        diff = (x_U - x_L) / 2.0
-        logger.debug('A_0 shape: %s', A.size())
-        logger.debug('sum_b shape: %s', sum_b.size())
-        # we only need the lower bound
-        lb = A.bmm(center) - A.abs().bmm(diff)
-        logger.debug('lb shape: %s', lb.size())
+        # A has shape (batch, specification_size, flattened_input_size)
+        logger.debug('Final A: %s', A.size())
+        if norm == np.inf:
+            x_U = x_U.view(x_U.size(0), -1, 1)
+            x_L = x_L.view(x_U.size(0), -1, 1)
+            center = (x_U + x_L) / 2.0
+            diff = (x_U - x_L) / 2.0
+            logger.debug('A_0 shape: %s', A.size())
+            logger.debug('sum_b shape: %s', sum_b.size())
+            # we only need the lower bound
+            lb = A.bmm(center) - A.abs().bmm(diff)
+            logger.debug('lb shape: %s', lb.size())
+        else:
+            x = x_U.view(x_U.size(0), -1, 1)
+            dual_norm = np.float64(1.0) / (1 - 1.0 / norm)
+            deviation = A.norm(dual_norm, -1) * eps
+            lb = A.bmm(x) - deviation.unsqueeze(-1)
         lb = lb.squeeze(-1) + sum_b
         return lb, sum_b
 
     def interval_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None):
-        h_U = x_U
-        h_L = x_L
         losses = 0
         unstable = 0
         dead = 0
         alive = 0
+        h_U = x_U
+        h_L = x_L
         for i, module in enumerate(list(self._modules.values())[:-1]):
-            h_U, h_L, loss, uns, d, a = module.interval_propagate(h_U, h_L)
+            # all internal layers should have Linf norm, except for the first layer
+            norm, h_U, h_L, loss, uns, d, a = module.interval_propagate(norm, h_U, h_L, eps)
+            # this is some stability loss used for initial experiments, not used in CROWN-IBP as it is not very effective
             losses += loss
             unstable += uns
             dead += d
             alive += a
         # last layer has C to merge
-        h_U, h_L, loss, uns, d, a = list(self._modules.values())[-1].interval_propagate(h_U, h_L, C)
+        norm, h_U, h_L, loss, uns, d, a = list(self._modules.values())[-1].interval_propagate(norm, h_U, h_L, eps, C)
         losses += loss
         unstable += uns
         dead += d

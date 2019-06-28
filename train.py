@@ -118,12 +118,13 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
             if norm == np.inf:
                 data_ub = data + (eps / std)
                 data_lb = data - (eps / std)
+            else:
+                data_ub = data_lb = data
 
         if list(model.parameters())[0].is_cuda:
             data = data.cuda()
-            if norm == np.inf:
-                data_ub = data_ub.cuda()
-                data_lb = data_lb.cuda()
+            data_ub = data_ub.cuda()
+            data_lb = data_lb.cuda()
             labels = labels.cuda()
             c = c.cuda()
             sa_labels = sa_labels.cuda()
@@ -140,6 +141,8 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         # get range statistic
         model_range = output.max().detach().cpu().item() - output.min().detach().cpu().item()
         
+        """
+        print('prediction:  ', output)
         ub, lb, _, _, _, _ = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
         lb = lb_s.scatter(1, sa_labels, lb)
         print('interval ub: ', ub)
@@ -148,29 +151,44 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         lb = lb_s.scatter(1, sa_labels, lb)
         print('full lb: ', lb)
         input()
+        """
 
         if verbose or method != "natural":
             if kwargs["bound_type"] == "convex-adv":
                 # Wong and Kolter's bound, or equivalently Fast-Lin
                 if kwargs["convex-proj"] is not None:
                     proj = kwargs["convex-proj"]
-                    norm_type = "l1_median"
+                    if norm == np.inf:
+                        norm_type = "l1_median"
+                    elif norm == 2:
+                        norm_type = "l2_normal"
+                    else:
+                        raise(ValueError("Unsupported norm {} for convex-adv".format(norm)))
                 else:
                     proj = None
-                    norm_type = "l1"
+                    if norm == np.inf:
+                        norm_type = "l1"
+                    elif norm == 2:
+                        norm_type = "l2"
+                    else:
+                        raise(ValueError("Unsupported norm {} for convex-adv".format(norm)))
                 if loader.std == [1] or loader.std == [1, 1, 1]:
                     convex_eps = eps
                 else:
                     convex_eps = eps / np.mean(loader.std)
                     # for CIFAR we are roughly / 0.2
                     # FIXME this is due to a bug in convex_adversarial, we cannot use per-channel eps
-                if kwargs["bounded_input"]:
-                    # FIXME the bounded projection in convex_adversarial has a bug, data range must be positive
-                    data_l = 0.0
-                    data_u = 1.0
+                if norm == np.inf:
+                    # bounded input is only for Linf
+                    if kwargs["bounded_input"]:
+                        # FIXME the bounded projection in convex_adversarial has a bug, data range must be positive
+                        data_l = 0.0
+                        data_u = 1.0
+                    else:
+                        data_l = -np.inf
+                        data_u = np.inf
                 else:
-                    data_l = -np.inf
-                    data_u = np.inf
+                    data_l = data_u = None
                 f = DualNetwork(model, data, convex_eps, proj = proj, norm_type = norm_type, bounded_input = kwargs["bounded_input"], data_l = data_l, data_u = data_u)
                 lb = f(c)
             elif kwargs["bound_type"] == "interval":

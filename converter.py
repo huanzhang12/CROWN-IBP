@@ -14,7 +14,6 @@ from datasets import loaders
 from model_defs import Flatten, model_mlp_any, model_cnn_1layer, model_cnn_2layer, model_cnn_4layer, model_cnn_3layer
 from bound_layers import BoundSequential
 import torch.optim as optim
-from gpu_profile import gpu_profile
 import time
 from datetime import datetime
 
