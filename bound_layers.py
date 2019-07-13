@@ -28,8 +28,12 @@ class BoundFlatten(torch.nn.Module):
     def interval_propagate(self, norm, h_U, h_L, eps):
         return norm, h_U.view(h_U.size(0), -1), h_L.view(h_L.size(0), -1), 0, 0, 0, 0
 
-    def bound_backward(self, last_A):
-        return last_A.view(last_A.size(0), last_A.size(1), *self.shape), 0
+    def bound_backward(self, last_uA, last_lA):
+        def _bound_oneside(A):
+            if A is None:
+                return None
+            return A.view(A.size(0), A.size(1), *self.shape)
+        return _bound_oneside(last_uA), 0, _bound_oneside(last_lA), 0
 
 class BoundLinear(Linear):
     def __init__(self, in_features, out_features, bias=True):
@@ -42,16 +46,21 @@ class BoundLinear(Linear):
         l.bias.data.copy_(linear_layer.bias.data)
         return l
 
-    def bound_backward(self, last_A):
-        logger.debug('last_A %s', last_A.size())
-        # propagate A to the next layer
-        next_A = last_A.matmul(self.weight)
-        logger.debug('next_A %s', next_A.size())
-        # compute the bias of this layer
-        sum_bias = last_A.matmul(self.bias)
-        # print(sum_bias)
-        logger.debug('sum_bias %s', sum_bias.size())
-        return next_A, sum_bias
+    def bound_backward(self, last_uA, last_lA):
+        def _bound_oneside(last_A):
+            if last_A is None:
+                return None, 0
+            logger.debug('last_A %s', last_A.size())
+            # propagate A to the next layer
+            next_A = last_A.matmul(self.weight)
+            logger.debug('next_A %s', next_A.size())
+            # compute the bias of this layer
+            sum_bias = last_A.matmul(self.bias)
+            logger.debug('sum_bias %s', sum_bias.size())
+            return next_A, sum_bias
+        uA, ubias = _bound_oneside(last_uA)
+        lA, lbias = _bound_oneside(last_lA)
+        return uA, ubias, lA, lbias
 
     def interval_propagate(self, norm, h_U, h_L, eps, C = None):
         # merge the specification
@@ -117,20 +126,24 @@ class BoundConv2d(Conv2d):
         self.output_shape = output.size()[1:]
         return output
 
-    def bound_backward(self, last_A):
-        logger.debug('last_A %s', last_A.size())
-        shape = last_A.size()
-        # propagate A to the next layer, with batch concatenated together
-        next_A = F.conv_transpose2d(last_A.view(shape[0] * shape[1], *shape[2:]), self.weight, None, stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
-        next_A = next_A.view(shape[0], shape[1], *next_A.shape[1:])
-        logger.debug('next_A %s', next_A.size())
-        logger.debug('bias %s', self.bias.size())
-        # dot product
-        # compute the bias of this layer, do a dot product
-        sum_bias = (last_A.sum((3,4)) * self.bias).sum(2)
-        # print(sum_bias)
-        logger.debug('sum_bias %s', sum_bias.size())
-        return next_A, sum_bias
+    def bound_backward(self, last_uA, last_lA):
+        def _bound_oneside(last_A):
+            if last_A is None:
+                return None, 0
+            logger.debug('last_A %s', last_A.size())
+            shape = last_A.size()
+            # propagate A to the next layer, with batch concatenated together
+            next_A = F.conv_transpose2d(last_A.view(shape[0] * shape[1], *shape[2:]), self.weight, None, stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
+            next_A = next_A.view(shape[0], shape[1], *next_A.shape[1:])
+            logger.debug('next_A %s', next_A.size())
+            logger.debug('bias %s', self.bias.size())
+            # dot product, compute the bias of this layer, do a dot product
+            sum_bias = (last_A.sum((3,4)) * self.bias).sum(2)
+            logger.debug('sum_bias %s', sum_bias.size())
+            return next_A, sum_bias
+        uA, ubias = _bound_oneside(last_uA)
+        lA, lbias = _bound_oneside(last_lA)
+        return uA, ubias, lA, lbias
 
     def interval_propagate(self, norm, h_U, h_L, eps):
         if norm == np.inf:
@@ -182,7 +195,7 @@ class BoundReLU(ReLU):
         return norm, F.relu(h_U), F.relu(h_L), tightness_loss, tightness_loss.detach().cpu().item(), \
                (h_U < 0).sum().detach().cpu().item(), (h_L > 0).sum().detach().cpu().item()
 
-    def bound_backward(self, last_A):
+    def bound_backward(self, last_uA, last_lA):
         lb_r = self.lower_l.clamp(max=0)
         ub_r = self.upper_u.clamp(min=0)
         # avoid division by 0 when both lb_r and ub_r are 0
@@ -196,14 +209,23 @@ class BoundReLU(ReLU):
         lower_d = (upper_d > 0.5).float()
         # lower_d = torch.sigmoid(100 * upper_d - 50) # differentiable version of lower slope (any slope between 0 and 1 is a valid bound)
         # Choose upper or lower bounds based on the sign of last_A
-        neg_A = last_A.clamp(max=0)
-        pos_A = last_A.clamp(min=0)
-        next_A = upper_d * neg_A + lower_d * pos_A
-        mult_A = neg_A.view(last_A.size(0), last_A.size(1), -1)
-        sum_bias = mult_A.matmul(upper_b.view(upper_b.size(0), -1, 1)).squeeze(-1)
+        uA = lA = None
+        ubias = lbias = 0
+        if last_uA is not None:
+            neg_uA = last_uA.clamp(max=0)
+            pos_uA = last_uA.clamp(min=0)
+            uA = upper_d * pos_uA + lower_d * neg_uA
+            mult_uA = pos_uA.view(last_uA.size(0), last_uA.size(1), -1)
+            ubias = mult_uA.matmul(upper_b.view(upper_b.size(0), -1, 1)).squeeze(-1)
+        if last_lA is not None:
+            neg_lA = last_lA.clamp(max=0)
+            pos_lA = last_lA.clamp(min=0)
+            lA = upper_d * neg_lA + lower_d * pos_lA
+            mult_lA = neg_lA.view(last_lA.size(0), last_lA.size(1), -1)
+            lbias = mult_lA.matmul(upper_b.view(upper_b.size(0), -1, 1)).squeeze(-1)
         del self.upper_u
         del self.lower_l
-        return next_A, sum_bias
+        return uA, ubias, lA, lbias
 
 
 class BoundSequential(Sequential):
@@ -234,34 +256,44 @@ class BoundSequential(Sequential):
     # @param x_U upper bound of input, shape (batch, *image_shape)
     # @param eps perturbation epsilon (not used for Linf)
     # @param C vector of specification, shape (batch, specification_size, output_size)
-    def backward_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None):
+    # @param upper compute CROWN upper bound
+    # @param lower compute CROWN lower bound
+    def backward_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None, upper=False, lower=True):
         # start propagation from the last layer
-        A, sum_b = list(self._modules.values())[-1].bound_backward(C)
-        for i, module in enumerate(reversed(list(self._modules.values())[:-1])):
-            logger.debug('before: %s', A.size())
-            A, b = module.bound_backward(A)
-            logger.debug('after: %s', A.size())
-            sum_b += b
-        A = A.view(A.size(0), A.size(1), -1)
-        # A has shape (batch, specification_size, flattened_input_size)
-        logger.debug('Final A: %s', A.size())
-        if norm == np.inf:
-            x_U = x_U.view(x_U.size(0), -1, 1)
-            x_L = x_L.view(x_U.size(0), -1, 1)
-            center = (x_U + x_L) / 2.0
-            diff = (x_U - x_L) / 2.0
-            logger.debug('A_0 shape: %s', A.size())
-            logger.debug('sum_b shape: %s', sum_b.size())
-            # we only need the lower bound
-            lb = A.bmm(center) - A.abs().bmm(diff)
-            logger.debug('lb shape: %s', lb.size())
-        else:
-            x = x_U.view(x_U.size(0), -1, 1)
-            dual_norm = np.float64(1.0) / (1 - 1.0 / norm)
-            deviation = A.norm(dual_norm, -1) * eps
-            lb = A.bmm(x) - deviation.unsqueeze(-1)
-        lb = lb.squeeze(-1) + sum_b
-        return lb, sum_b
+        upper_A = C if upper else None
+        lower_A = C if lower else None
+        upper_sum_b = lower_sum_b = 0
+        for i, module in enumerate(reversed(list(self._modules.values()))):
+            upper_A, upper_b, lower_A, lower_b = module.bound_backward(upper_A, lower_A)
+            upper_sum_b += upper_b
+            lower_sum_b += lower_b
+        # sign = +1: upper bound, sign = -1: lower bound
+        def _get_concrete_bound(A, sum_b, sign = -1):
+            if A is None:
+                return None
+            A = A.view(A.size(0), A.size(1), -1)
+            # A has shape (batch, specification_size, flattened_input_size)
+            logger.debug('Final A: %s', A.size())
+            if norm == np.inf:
+                x_ub = x_U.view(x_U.size(0), -1, 1)
+                x_lb = x_L.view(x_L.size(0), -1, 1)
+                center = (x_ub + x_lb) / 2.0
+                diff = (x_ub - x_lb) / 2.0
+                logger.debug('A_0 shape: %s', A.size())
+                logger.debug('sum_b shape: %s', sum_b.size())
+                # we only need the lower bound
+                bound = A.bmm(center) + sign * A.abs().bmm(diff)
+                logger.debug('bound shape: %s', bound.size())
+            else:
+                x = x_U.view(x_U.size(0), -1, 1)
+                dual_norm = np.float64(1.0) / (1 - 1.0 / norm)
+                deviation = A.norm(dual_norm, -1) * eps
+                bound = A.bmm(x) + sign * deviation.unsqueeze(-1)
+            bound = bound.squeeze(-1) + sum_b
+            return bound
+        lb = _get_concrete_bound(lower_A, lower_sum_b, sign = -1)
+        ub = _get_concrete_bound(upper_A, upper_sum_b, sign = +1)
+        return ub, upper_sum_b, lb, lower_sum_b
 
     def interval_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None):
         losses = 0

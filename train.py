@@ -106,6 +106,7 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         sa_labels = sa[labels]
         # storing computed lower bounds after scatter
         lb_s = torch.zeros(data.size(0), num_class)
+        ub_s = torch.zeros(data.size(0), num_class)
 
         # FIXME: Assume data is from range 0 - 1
         if kwargs["bounded_input"]:
@@ -129,6 +130,7 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
             c = c.cuda()
             sa_labels = sa_labels.cuda()
             lb_s = lb_s.cuda()
+            ub_s = ub_s.cuda()
         # convert epsilon to a tensor
         eps_tensor = data.new(1)
         eps_tensor[0] = eps
@@ -147,8 +149,10 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         lb = lb_s.scatter(1, sa_labels, lb)
         print('interval ub: ', ub)
         print('interval lb: ', lb)
-        lb, _ = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+        ub, _, lb, _ = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=True, lower=True)
         lb = lb_s.scatter(1, sa_labels, lb)
+        ub = ub_s.scatter(1, sa_labels, ub)
+        print('full ub: ', ub)
         print('full lb: ', lb)
         input()
         """
@@ -219,11 +223,11 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
                         runnerup_c = runnerup_c.unsqueeze(1).detach()
                         # print(runnerup_c)
                         # get the bound for runnerup_c
-                        clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+                        _, _, clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
                         clb = clb.expand(clb.size(0), num_class - 1)
                     else:
                         # get the CROWN bound using interval bounds
-                        clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+                        _, _, clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
                         bound_bias.update(bias.sum() / data.size(0))
                     # how much better is crown-ibp better than ibp?
                     diff = (clb - ilb).sum().item()
