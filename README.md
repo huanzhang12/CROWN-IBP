@@ -24,9 +24,10 @@ Polytope](https://github.com/locuslab/convex_adversarial) (Wong et al., 2018).
 News
 ---------
 
-* July 11, 2019: Code has been further optimized and CROWN-IBP training is roughly 2-3 times
-faster than before. For reproducing paper results you can checkout the old code in 'paper-v1'
-branch. Otherwise it is recommend to use this new version.
+* July 14, 2019: Code has been further optimized and CROWN-IBP training is
+  roughly 2-3 times faster than before. For reproducing paper results you can
+  checkout the old code in ['paper-v1'](../../tree/paper-v1) branch. Otherwise it is
+  recommended to use this new version.
 * Jun 8, 2019: Initial release
 
 Intro
@@ -135,9 +136,9 @@ python train.py --config config/mnist_crown_large.json --model_subset 4
 The argument `--model_subset` selects the 4th model defined in configuration
 file, which is the largest model in our model pool. You should be able to
 achieve about 7.5% verified error after 100 epochs.  This is a large model, so
-training will be slower. Note that our implementation of CROWN-IBP is still
-preliminary and not optimized, and further speedups can be achieved after code
-optimization.
+training will be slower (roughly 1 hour). Note that our implementation of
+CROWN-IBP is still preliminary and not optimized, and further speedups can be
+achieved after code optimization.
 
 For `epsilon=0.4` run this command:
 
