@@ -223,8 +223,6 @@ class BoundReLU(ReLU):
             lA = upper_d * neg_lA + lower_d * pos_lA
             mult_lA = neg_lA.view(last_lA.size(0), last_lA.size(1), -1)
             lbias = mult_lA.matmul(upper_b.view(upper_b.size(0), -1, 1)).squeeze(-1)
-        del self.upper_u
-        del self.lower_l
         return uA, ubias, lA, lbias
 
 
@@ -250,6 +248,62 @@ class BoundSequential(Sequential):
         return BoundSequential(*layers)
 
 
+    ## Full CROWN bounds with all intermediate layer bounds computed by CROWN
+    ## This can be slow for training, and it is recommend to use it for verification only
+    # @param norm perturbation norm (np.inf, 2)
+    # @param x_L lower bound of input, shape (batch, *image_shape)
+    # @param x_U upper bound of input, shape (batch, *image_shape)
+    # @param eps perturbation epsilon (not used for Linf)
+    # @param C vector of specification, shape (batch, specification_size, output_size)
+    # @param upper compute CROWN upper bound
+    # @param lower compute CROWN lower bound
+    def full_backward_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None, upper=True, lower=True):
+        h_U = x_U
+        h_L = x_L
+        modules = list(self._modules.values())
+        # IBP through the first weight (it is the same bound as CROWN for 1st layer, and IBP can be faster)
+        for i, module in enumerate(modules):
+            norm, h_U, h_L, _, _, _, _ = module.interval_propagate(norm, h_U, h_L, eps)
+            # skip the first flatten and linear layer, until we reach the first ReLU layer
+            if isinstance(module, BoundReLU):
+                # now the upper and lower bound of this ReLU layer has been set in interval_propagate()
+                last_module = i
+                break
+        # CROWN propagation for all rest layers
+        # outer loop, starting from the 2nd layer until we reach the output layer
+        for i in range(last_module + 1, len(modules)):
+            # we do not need bounds after ReLU/flatten layers; we only need the bounds
+            # before a ReLU layer
+            if isinstance(modules[i], BoundReLU):
+                # we set C as the weight of previous layer
+                if isinstance(modules[i-1], BoundLinear):
+                    # add a batch dimension; all images have the same C in this case
+                    newC = modules[i-1].weight.unsqueeze(0)
+                    # we skip the layer i, and use CROWN to compute pre-activation bounds
+                    # starting from layer i-2 (layer i-1 passed as specification)
+                    ub, _, lb, _ = self.backward_range(norm = norm, x_U = x_U, x_L = x_L, eps = eps, C = newC, upper = True, lower = True, modules = modules[:i-1])
+                    # add the missing bias term (we propagate newC which do not have bias)
+                    ub += modules[i-1].bias
+                    lb += modules[i-1].bias
+                elif isinstance(modules[i-1], BoundConv2d):
+                    # we need to unroll the convolutional layer here
+                    c, h, w = modules[i-1].output_shape
+                    newC = torch.eye(c*h*w, device = x_U.device, dtype = x_U.dtype)
+                    newC = newC.view(1, c*h*w, c, h, w)
+                    # use CROWN to compute pre-actiation bounds starting from layer i-1
+                    ub, _, lb, _ = self.backward_range(norm = norm, x_U = x_U, x_L = x_L, eps = eps, C = newC, upper = True, lower = True, modules = modules[:i])
+                    # reshape to conv output shape; these are pre-activation bounds
+                    ub = ub.view(ub.size(0), c, h, w)
+                    lb = lb.view(lb.size(0), c, h, w)
+                else:
+                    raise RuntimeError("Unsupported network structure")
+                # set pre-activation bounds for layer i (the ReLU layer)
+                modules[i].upper_u = ub
+                modules[i].lower_l = lb
+        # get the final layer bound with spec C
+        return self.backward_range(norm = norm, x_U = x_U, x_L = x_L, eps = eps, C = C, upper = upper, lower = lower)
+
+
     ## High level function, will be called outside
     # @param norm perturbation norm (np.inf, 2)
     # @param x_L lower bound of input, shape (batch, *image_shape)
@@ -258,15 +312,17 @@ class BoundSequential(Sequential):
     # @param C vector of specification, shape (batch, specification_size, output_size)
     # @param upper compute CROWN upper bound
     # @param lower compute CROWN lower bound
-    def backward_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None, upper=False, lower=True):
+    def backward_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None, upper=False, lower=True, modules=None):
         # start propagation from the last layer
+        modules = list(self._modules.values()) if modules is None else modules
         upper_A = C if upper else None
         lower_A = C if lower else None
         upper_sum_b = lower_sum_b = 0
-        for i, module in enumerate(reversed(list(self._modules.values()))):
+        for i, module in enumerate(reversed(modules)):
             upper_A, upper_b, lower_A, lower_b = module.bound_backward(upper_A, lower_A)
-            upper_sum_b += upper_b
-            lower_sum_b += lower_b
+            # squeeze is for using broadcasting in the cast that all examples use the same spec
+            upper_sum_b = upper_b + upper_sum_b
+            lower_sum_b = lower_b + lower_sum_b
         # sign = +1: upper bound, sign = -1: lower bound
         def _get_concrete_bound(A, sum_b, sign = -1):
             if A is None:

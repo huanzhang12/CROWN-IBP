@@ -152,8 +152,13 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         ub, _, lb, _ = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=True, lower=True)
         lb = lb_s.scatter(1, sa_labels, lb)
         ub = ub_s.scatter(1, sa_labels, ub)
-        print('full ub: ', ub)
-        print('full lb: ', lb)
+        print('crown-ibp ub: ', ub)
+        print('crown-ibp lb: ', lb)
+        ub, _, lb, _ = model.full_backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=True, lower=True)
+        lb = lb_s.scatter(1, sa_labels, lb)
+        ub = ub_s.scatter(1, sa_labels, ub)
+        print('full-crown ub: ', ub)
+        print('full-crown lb: ', lb)
         input()
         """
 
