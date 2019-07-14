@@ -26,8 +26,7 @@ def output(config,models, X, alpha):
 def _pgd(config,model, X, y, epsilon, alpha, niters=100,step_size=0.01): 
     out = output(config,model,X, alpha)
     ce = nn.CrossEntropyLoss()(out, y)
-    err = (out.data.max(1)[1] != y.data).float().sum()  / X.size(0)
-
+    err = (out.data.max(1)[1] != y.data).float().sum()
     X_pgd = Variable(X.data, requires_grad=True)
     y_y=y.view(-1,1)
     for i in range(niters): 
@@ -47,7 +46,7 @@ def _pgd(config,model, X, y, epsilon, alpha, niters=100,step_size=0.01):
         #X_pgd = Variable(X.data + eta, requires_grad=True)
         X_pgd.data = X.data + eta
         X_pgd.data = torch.clamp(X_pgd.data, 0.0, 1.0)
-    err_pgd = (output(config,model,X_pgd, alpha).data.max(1)[1] != y.data).float().sum() / X.size(0)
+    err_pgd = (output(config,model,X_pgd, alpha).data.max(1)[1] != y.data).float().sum()
     return err, err_pgd
 
 def pgd(config,loader, model, epsilon, alpha, niters=100, step_size=0.01, verbose=False,
@@ -58,38 +57,29 @@ def pgd(config,loader, model, epsilon, alpha, niters=100, step_size=0.01, verbos
 def attack(config,loader, model, epsilon, alpha,verbose=False, atk=None,
            robust=False):
     # print(np.max(loader.dataset.data),np.min(loader.dataset.data))
-    total_err, total_fgs, total_robust = [],[],[]
+    total_count = 0
+    err_count = 0
+    pgd_err_count = 0
     if verbose: 
         print("Requiring no gradients for parameters.")
 
-    
     for i, (X,y) in enumerate(loader):
-        if i>1:
-            break
         X,y = Variable(X.cuda(), requires_grad=True), Variable(y.cuda().long())
 
         if y.dim() == 2: 
             y = y.squeeze(1)
-        
-        if robust: 
-            robust_ce, robust_err = robust_loss_batch(model, epsilon, X, y, False, False)
 
-        err, err_fgs = atk(config,model, X, y, epsilon, alpha)
-        
-        total_err.append(err)
-        total_fgs.append(err_fgs)
-        if robust: 
-            total_robust.append(robust_err)
-        if verbose: 
-            if robust: 
-                print('clean err: {} | PGD err: {} | robust err: {}'.format(err, err_fgs, robust_err))
-            else:
-                print('clean err: {} | PGD err: {}'.format(err, err_fgs))
+        err, err_pgd = atk(config,model, X, y, epsilon, alpha)
+        total_count += X.size(0)
+        err_count += err
+        pgd_err_count += err_pgd
+
+    if verbose: 
+        print('clean err: {} | PGD err: {}'.format(err, err_fgs))
     
-    if robust:         
-        print('[TOTAL] clean err: {:6.4f} | PGD err: {:6.4f} | robust err: {:6.4f}'.format(mean(total_err), mean(total_fgs), mean(total_robust)))
-    else:
-        print('[TOTAL] clean err: {:6.4f} | PGD err: {:6.4f}'.format(mean(total_err), mean(total_fgs)))
+    err_rate = err_count / total_count
+    pgd_err_rate = pgd_err_count / total_count
+    print('[TOTAL] clean err: {:6.4f} | PGD err: {:6.4f}'.format(err_rate, pgd_err_rate))
     #return total_err, total_fgs, total_robust
-    return mean(total_err), mean(total_fgs)
+    return err_rate, pgd_err_rate
 

@@ -13,13 +13,22 @@ al.](https://github.com/MadryLab/mnist_challenge) using PGD-based adversarial
 training. More empirical results and algorithm details of CROWN-IBP can be 
 found in our paper:
 
-Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Duane Boning, and Cho-Jui Hsieh, "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([https://arxiv.org/abs/1906.06316](https://arxiv.org/abs/1906.06316))
+Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Duane Boning, and Cho-Jui Hsieh, "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([**https://arxiv.org/abs/1906.06316**](https://arxiv.org/abs/1906.06316))
 
 Our repository provides **high quality PyTorch implementations** of Pure-IBP,
 Natural-IBP [(Gowal et
 al., 2018)](https://github.com/deepmind/interval-bound-propagation), CROWN-IBP (our
 algorithm) and [Convex Adversarial
 Polytope](https://github.com/locuslab/convex_adversarial) (Wong et al., 2018).
+
+News
+---------
+
+* July 14, 2019: Code has been further optimized and CROWN-IBP training is
+  roughly 2-3 times faster than before. For reproducing paper results you can
+  checkout the old code in ['paper-v1'](../../tree/paper-v1) branch. Otherwise it is
+  recommended to use this new version.
+* Jun 8, 2019: Initial release
 
 Intro
 ---------
@@ -127,9 +136,9 @@ python train.py --config config/mnist_crown_large.json --model_subset 4
 The argument `--model_subset` selects the 4th model defined in configuration
 file, which is the largest model in our model pool. You should be able to
 achieve about 7.5% verified error after 100 epochs.  This is a large model, so
-training will be slower. Note that our implementation of CROWN-IBP is still
-preliminary and not optimized, and further speedups can be achieved after code
-optimization.
+training will be slower (roughly 1 hour). Note that our implementation of
+CROWN-IBP is still preliminary and not optimized, and further speedups can be
+achieved after code optimization.
 
 For `epsilon=0.4` run this command:
 
@@ -201,18 +210,20 @@ We stand on the shoulders of giants and we greatly appreciate the inspiring
 works of pioneers in this field.  Here we list references directly related to
 this README. A full bibliography can be found in our paper.
 
-Gowal, S., Dvijotham, K., Stanforth, R., Bunel, R., Qin, C., Uesato, J., Mann,
-T., and Kohli, P. On the effectiveness of interval bound propagation for
-training verifiably robust models. arXiv preprint arXiv:1810.12715, 2018.
+Sven Gowal, Krishnamurthy Dvijotham, Robert Stanforth, Rudy Bunel, Chongli Qin,
+Jonathan Uesato, Timothy Mann, and Pushmeet Kohli. "On the effectiveness of
+interval bound propagation for training verifiably robust models." arXiv
+preprint arXiv:1810.12715 (2018).
 
-Wong, Eric, and J. Zico Kolter. Provable defenses against adversarial examples
+Eric Wong, and J. Zico Kolter. Provable defenses against adversarial examples
 via the convex outer adversarial polytope. ICML 2018.
 
-Madry, A., Makelov, A., Schmidt, L., Tsipras, D., and Vladu, A. Towards deep
-learning models resistant to adversarial attacks. In International Conference
-on Learning Representations, 2018.
+Aleksander Madry, Aleksandar Makelov, Ludwig Schmidt, Dimitris Tsipras, and
+Adrian Vladu. "Towards deep learning models resistant to adversarial attacks."
+In International Conference on Learning Representations, 2018.
 
-Zhang, H., Weng, T.-W., Chen, P.-Y., Hsieh, C.-J., and Daniel, L. Efficient
-neural network robustness certification with general activation functions. In
-Advances in Neural Information Processing Systems (NIPS), 2018.
+Huan Zhang, Tsui-Wei Weng, Pin-Yu Chen, Cho-Jui Hsieh, and Luca Daniel.
+Efficient neural network robustness certification with general activation
+functions. In Advances in neural information processing systems (NIPS), pp.
+4939-4948. 2018.
 

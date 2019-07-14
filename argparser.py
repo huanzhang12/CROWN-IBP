@@ -45,6 +45,9 @@ def argparser(seed = 2019):
     random.seed(args.seed)
     np.random.seed(args.seed)
 
+    # for dual norm computation, we will have 1 / 0.0 = inf
+    np.seterr(divide='ignore')
+
     overrides_dict = {}
     for o in args.overrides:
         key, val = o.strip().split("=")

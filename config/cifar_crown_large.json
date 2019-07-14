@@ -12,7 +12,7 @@
         "epsilon": 0.03137,
         "schedule_start": 10,
         "schedule_length":121,
-        "norm": "Linf",
+        "norm": "inf",
         "verbose": false,
         "loader_params": {"batch_size": 128, "test_batch_size": 256, "shuffle_train": true, "train_random_transform": true, "normalize_input": true},
         "method_params": {"bounded_input": false, "bound_type": "crown-interval"}
@@ -26,7 +26,7 @@
     "eval_params": {
         "method": "robust",
         "epsilon": 0.03137,
-        "norm": "Linf",
+        "norm": "inf",
         "verbose": false,
         "loader_params": {"batch_size": 128, "test_batch_size": 256, "shuffle_train": true, "normalize_input": true},
         "method_params": {"bounded_input": false, "bound_type": "interval"}
