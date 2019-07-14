@@ -170,8 +170,6 @@ class BoundReLU(ReLU):
 
     def interval_propagate(self, norm, h_U, h_L, eps):
         assert norm == np.inf
-        # return F.relu(h_U), F.relu(h_L), -torch.tanh(1 + h_U * h_L).sum(), ((h_U > 0) & (h_L < 0)).sum().detach().cpu().item(), \
-        # return F.relu(h_U), F.relu(h_L), 0, ((h_U > 0) & (h_L < 0)).sum().detach().cpu().item(), \
         guard_eps = 1e-5
         self.unstab = ((h_L < -guard_eps) & (h_U > guard_eps))
         # stored upper and lower bounds will be used for backward bound propagation
@@ -187,14 +185,11 @@ class BoundReLU(ReLU):
         ub_r = self.upper_u.clamp(min=0)
         # avoid division by 0 when both lb_r and ub_r are 0
         ub_r = torch.max(ub_r, lb_r + 1e-8)
-        # ub_r = F.softplus(self.upper_u, beta=50)
-        # lb_r = - F.softplus(self.lower_l, beta=50)
         # CROWN upper and lower linear bounds
         upper_d = ub_r / (ub_r - lb_r)
         upper_b = - lb_r * upper_d
         upper_d = upper_d.unsqueeze(1)
         lower_d = (upper_d > 0.5).float()
-        # lower_d = torch.sigmoid(100 * upper_d - 50) # differentiable version of lower slope (any slope between 0 and 1 is a valid bound)
         # Choose upper or lower bounds based on the sign of last_A
         neg_A = last_A.clamp(max=0)
         pos_A = last_A.clamp(min=0)
