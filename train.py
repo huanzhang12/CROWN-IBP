@@ -111,8 +111,9 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         # FIXME: Assume data is from range 0 - 1
         if kwargs["bounded_input"]:
             assert loader.std == [1,1,1] or loader.std == [1]
-            # bounded input only makes sense for Linf perturbation
-            assert norm == np.inf
+            if norm != np.inf:
+                raise ValueError("bounded input only makes sense for Linf perturbation. "
+                                 "Please set the bounded_input option to false.")
             data_ub = (data + eps).clamp(max=1.0)
             data_lb = (data - eps).clamp(min=0.0)
         else:
@@ -202,6 +203,10 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
                 lb = f(c)
             elif kwargs["bound_type"] == "interval":
                 ub, lb, relu_activity, unstable, dead, alive = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+            elif kwargs["bound_type"] == "crown-full":
+                _, _, lb, _ = model.full_backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=False, lower=True)
+                unstable = dead = alive = 0
+                relu_activity =torch.tensor([0])
             elif kwargs["bound_type"] == "crown-interval":
                 ub, ilb, relu_activity, unstable, dead, alive = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
                 crown_final_factor = kwargs['final-beta']
