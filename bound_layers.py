@@ -18,8 +18,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BoundFlatten(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bound_opts=None):
         super(BoundFlatten, self).__init__()
+        self.bound_opts = bound_opts
 
     def forward(self, x):
         self.shape = x.size()[1:]
@@ -33,33 +34,46 @@ class BoundFlatten(torch.nn.Module):
             if A is None:
                 return None
             return A.view(A.size(0), A.size(1), *self.shape)
-        return _bound_oneside(last_uA), 0, _bound_oneside(last_lA), 0
+        if self.bound_opts.get("same-slope", False) and (last_uA is not None) and (last_lA is not None):
+            new_bound = _bound_oneside(last_uA)
+            return new_bound, 0, new_bound, 0
+        else:
+            return _bound_oneside(last_uA), 0, _bound_oneside(last_lA), 0
 
 class BoundLinear(Linear):
-    def __init__(self, in_features, out_features, bias=True):
+    def __init__(self, in_features, out_features, bias=True, bound_opts=None):
         super(BoundLinear, self).__init__(in_features, out_features, bias)
+        self.bound_opts = bound_opts
 
     @staticmethod
-    def convert(linear_layer):
-        l = BoundLinear(linear_layer.in_features, linear_layer.out_features, linear_layer.bias is not None)
+    def convert(linear_layer, bound_opts=None):
+        l = BoundLinear(linear_layer.in_features, linear_layer.out_features, linear_layer.bias is not None, bound_opts)
         l.weight.data.copy_(linear_layer.weight.data)
         l.bias.data.copy_(linear_layer.bias.data)
         return l
 
     def bound_backward(self, last_uA, last_lA):
-        def _bound_oneside(last_A):
+        def _bound_oneside(last_A, compute_A=True):
             if last_A is None:
                 return None, 0
             logger.debug('last_A %s', last_A.size())
             # propagate A to the next layer
-            next_A = last_A.matmul(self.weight)
-            logger.debug('next_A %s', next_A.size())
+            if compute_A:
+                next_A = last_A.matmul(self.weight)
+                logger.debug('next_A %s', next_A.size())
+            else:
+                next_A = None
             # compute the bias of this layer
             sum_bias = last_A.matmul(self.bias)
             logger.debug('sum_bias %s', sum_bias.size())
             return next_A, sum_bias
-        uA, ubias = _bound_oneside(last_uA)
-        lA, lbias = _bound_oneside(last_lA)
+        if self.bound_opts.get("same-slope", False) and (last_uA is not None) and (last_lA is not None):
+            uA, ubias = _bound_oneside(last_uA, True)
+            _, lbias = _bound_oneside(last_lA, False)
+            lA = uA
+        else:
+            uA, ubias = _bound_oneside(last_uA)
+            lA, lbias = _bound_oneside(last_lA)
         return uA, ubias, lA, lbias
 
     def interval_propagate(self, norm, h_U, h_L, eps, C = None):
@@ -108,13 +122,14 @@ class BoundLinear(Linear):
 
 
 class BoundConv2d(Conv2d):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, bound_opts=None):
         super(BoundConv2d, self).__init__(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, 
                 stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
+        self.bound_opts = bound_opts
 
     @staticmethod
-    def convert(l):
-        nl = BoundConv2d(l.in_channels, l.out_channels, l.kernel_size, l.stride, l.padding, l.dilation, l.groups, l.bias is not None)
+    def convert(l, bound_opts=None):
+        nl = BoundConv2d(l.in_channels, l.out_channels, l.kernel_size, l.stride, l.padding, l.dilation, l.groups, l.bias is not None, bound_opts)
         nl.weight.data.copy_(l.weight.data)
         nl.bias.data.copy_(l.bias.data)
         logger.debug(nl.bias.size())
@@ -127,22 +142,31 @@ class BoundConv2d(Conv2d):
         return output
 
     def bound_backward(self, last_uA, last_lA):
-        def _bound_oneside(last_A):
+        def _bound_oneside(last_A, compute_A=True):
             if last_A is None:
                 return None, 0
             logger.debug('last_A %s', last_A.size())
             shape = last_A.size()
             # propagate A to the next layer, with batch concatenated together
-            next_A = F.conv_transpose2d(last_A.view(shape[0] * shape[1], *shape[2:]), self.weight, None, stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
-            next_A = next_A.view(shape[0], shape[1], *next_A.shape[1:])
-            logger.debug('next_A %s', next_A.size())
+            if compute_A:
+                next_A = F.conv_transpose2d(last_A.view(shape[0] * shape[1], *shape[2:]), self.weight, None, stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
+                next_A = next_A.view(shape[0], shape[1], *next_A.shape[1:])
+                logger.debug('next_A %s', next_A.size())
+            else:
+                next_A = False
             logger.debug('bias %s', self.bias.size())
             # dot product, compute the bias of this layer, do a dot product
             sum_bias = (last_A.sum((3,4)) * self.bias).sum(2)
             logger.debug('sum_bias %s', sum_bias.size())
             return next_A, sum_bias
-        uA, ubias = _bound_oneside(last_uA)
-        lA, lbias = _bound_oneside(last_lA)
+        # if the slope is the same (Fast-Lin) and both matrices are given, only need to compute one of them
+        if self.bound_opts.get("same-slope", False) and (last_uA is not None) and (last_lA is not None):
+            uA, ubias = _bound_oneside(last_uA, True)
+            _, lbias = _bound_oneside(last_lA, False)
+            lA = uA
+        else:
+            uA, ubias = _bound_oneside(last_uA)
+            lA, lbias = _bound_oneside(last_lA)
         return uA, ubias, lA, lbias
 
     def interval_propagate(self, norm, h_U, h_L, eps):
@@ -168,17 +192,18 @@ class BoundConv2d(Conv2d):
         return np.inf, upper, lower, 0, 0, 0, 0
     
 class BoundReLU(ReLU):
-    def __init__(self, prev_layer, inplace=False):
+    def __init__(self, prev_layer, inplace=False, bound_opts=None):
         super(BoundReLU, self).__init__(inplace)
         # ReLU needs the previous layer's bounds
         # self.prev_layer = prev_layer
+        self.bound_opts = bound_opts
     
     ## Convert a ReLU layer to BoundReLU layer
     # @param act_layer ReLU layer object
     # @param prev_layer Pre-activation layer, used for get preactivation bounds
     @staticmethod
-    def convert(act_layer, prev_layer):
-        l = BoundReLU(prev_layer, act_layer.inplace)
+    def convert(act_layer, prev_layer, bound_opts=None):
+        l = BoundReLU(prev_layer, act_layer.inplace, bound_opts)
         return l
 
     def interval_propagate(self, norm, h_U, h_L, eps):
@@ -202,20 +227,31 @@ class BoundReLU(ReLU):
         upper_d = ub_r / (ub_r - lb_r)
         upper_b = - lb_r * upper_d
         upper_d = upper_d.unsqueeze(1)
-        lower_d = (upper_d > 0.5).float()
-        # Choose upper or lower bounds based on the sign of last_A
+        if self.bound_opts.get("same-slope", False):
+            # the same slope for upper and lower
+            lower_d = upper_d
+        else:
+            lower_d = (upper_d > 0.5).float()
         uA = lA = None
         ubias = lbias = 0
+        # Choose upper or lower bounds based on the sign of last_A
         if last_uA is not None:
-            neg_uA = last_uA.clamp(max=0)
             pos_uA = last_uA.clamp(min=0)
-            uA = upper_d * pos_uA + lower_d * neg_uA
+            if self.bound_opts.get("same-slope", False):
+                # same upper_d and lower_d, no need to check the sign
+                uA = upper_d * last_uA
+            else:
+                neg_uA = last_uA.clamp(max=0)
+                uA = upper_d * pos_uA + lower_d * neg_uA
             mult_uA = pos_uA.view(last_uA.size(0), last_uA.size(1), -1)
             ubias = mult_uA.matmul(upper_b.view(upper_b.size(0), -1, 1)).squeeze(-1)
         if last_lA is not None:
             neg_lA = last_lA.clamp(max=0)
-            pos_lA = last_lA.clamp(min=0)
-            lA = upper_d * neg_lA + lower_d * pos_lA
+            if self.bound_opts.get("same-slope", False):
+                lA = uA if uA is not None else lower_d * last_lA
+            else:
+                pos_lA = last_lA.clamp(min=0)
+                lA = upper_d * neg_lA + lower_d * pos_lA
             mult_lA = neg_lA.view(last_lA.size(0), last_lA.size(1), -1)
             lbias = mult_lA.matmul(upper_b.view(upper_b.size(0), -1, 1)).squeeze(-1)
         return uA, ubias, lA, lbias
@@ -229,17 +265,17 @@ class BoundSequential(Sequential):
     # @param sequential_model Input pytorch model
     # @return Converted model
     @staticmethod
-    def convert(sequential_model):
+    def convert(sequential_model, bound_opts=None):
         layers = []
         for l in sequential_model:
             if isinstance(l, Linear):
-                layers.append(BoundLinear.convert(l))
+                layers.append(BoundLinear.convert(l, bound_opts))
             if isinstance(l, Conv2d):
-                layers.append(BoundConv2d.convert(l))
+                layers.append(BoundConv2d.convert(l, bound_opts))
             if isinstance(l, ReLU):
-                layers.append(BoundReLU.convert(l, layers[-1]))
+                layers.append(BoundReLU.convert(l, layers[-1], bound_opts))
             if isinstance(l, Flatten):
-                layers.append(BoundFlatten())
+                layers.append(BoundFlatten(bound_opts))
         return BoundSequential(*layers)
 
 

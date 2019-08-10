@@ -352,15 +352,14 @@ def main(args):
     global_train_config = config["training_params"]
     models, model_names = config_modelloader(config)
 
-    converted_models = [BoundSequential.convert(model) for model in models]
-
-    for model, model_id, model_config in zip(converted_models, model_names, config["models"]):
-        model = model.cuda()
-
+    for model, model_id, model_config in zip(models, model_names, config["models"]):
         # make a copy of global training config, and update per-model config
         train_config = copy.deepcopy(global_train_config)
         if "training_params" in model_config:
             train_config = update_dict(train_config, model_config["training_params"])
+
+        model = BoundSequential.convert(model, train_config["method_params"]["bound_opts"])
+        model = model.cuda()
 
         # read training parameters from config file
         epochs = train_config["epochs"]

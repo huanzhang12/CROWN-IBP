@@ -17,14 +17,14 @@
         "norm": "Linf",
         "verbose": false,
         "loader_params": {"batch_size": 128, "shuffle_train": true},
-        "method_params": {"batch_size": 128, "shuffle_train": true, "runnerup_only": false, "activity_reg": 0.000, "final-beta": 0.0, "final-kappa": 0.5, "convex-proj": 50}
+        "method_params": {"batch_size": 128, "shuffle_train": true, "runnerup_only": false, "activity_reg": 0.000, "final-beta": 0.0, "final-kappa": 0.5, "convex-proj": 50, "bound_opts":{}}
     },
     "eval_params": {
         "method": "robust",
         "norm": "Linf",
         "verbose": false,
         "loader_params": {"batch_size": 256, "test_batch_size": 256, "shuffle_train": true},
-        "method_params": {"bounded_input": true, "runnerup_only": false, "activity_reg": 0.000, "final-beta": 1.0, "final-kappa": 0.5, "bound_type": "interval", "convex-proj": null}
+        "method_params": {"bounded_input": true, "runnerup_only": false, "activity_reg": 0.000, "final-beta": 1.0, "final-kappa": 0.5, "bound_type": "interval", "convex-proj": null, "bound_opts": {}}
     }
 }
 

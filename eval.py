@@ -29,18 +29,17 @@ def main(args):
     global_eval_config = config["eval_params"]
     models, model_names = config_modelloader(config, load_pretrain = True)
 
-    converted_models = [BoundSequential.convert(model) for model in models]
-
     robust_errs = []
     errs = []
 
-    for model, model_id, model_config in zip(converted_models, model_names, config["models"]):
-        model = model.cuda()
-
+    for model, model_id, model_config in zip(models, model_names, config["models"]):
         # make a copy of global training config, and update per-model config
         eval_config = copy.deepcopy(global_eval_config)
         if "eval_params" in model_config:
             eval_config.update(model_config["eval_params"])
+
+        model = BoundSequential.convert(model, eval_config["method_params"]["bound_opts"])
+        model = model.cuda()
 
         # read training parameters from config file
         method = eval_config["method"]
