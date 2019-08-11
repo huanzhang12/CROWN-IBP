@@ -280,13 +280,14 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
             loss.backward()
             opt.step()
 
-        batch_time.update(time.time() - start)
         losses.update(loss.cpu().detach().numpy(), data.size(0))
 
         if verbose or method != "natural":
             robust_ce_losses.update(robust_ce.cpu().detach().numpy(), data.size(0))
             # robust_ce_losses.update(robust_ce, data.size(0))
             robust_errors.update(torch.sum((lb<0).any(dim=1)).cpu().detach().numpy() / data.size(0), data.size(0))
+
+        batch_time.update(time.time() - start)
         if i % 50 == 0 and train:
             logger.log(  '[{:2d}:{:4d}]: eps {:4f}  '
                     'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
