@@ -145,9 +145,11 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         model_range = output.max().detach().cpu().item() - output.min().detach().cpu().item()
         
         """
+        torch.set_printoptions(threshold=5000)
         print('prediction:  ', output)
         ub, lb, _, _, _, _ = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
         lb = lb_s.scatter(1, sa_labels, lb)
+        ub = ub_s.scatter(1, sa_labels, ub)
         print('interval ub: ', ub)
         print('interval lb: ', lb)
         ub, _, lb, _ = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=True, lower=True)
