@@ -15,9 +15,9 @@ found in our paper:
 
 Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Duane Boning, and Cho-Jui Hsieh, "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([**https://arxiv.org/abs/1906.06316**](https://arxiv.org/abs/1906.06316))
 
-Our repository provides **high quality PyTorch implementations** of IBP [(Gowal
-et al., 2018)](https://github.com/deepmind/interval-bound-propagation),
-CROWN-IBP (our algorithm), [Convex Adversarial
+Our repository provides **high quality PyTorch implementations** of
+[IBP](https://github.com/deepmind/interval-bound-propagation) (Gowal et al.,
+2018), CROWN-IBP (our algorithm), [Convex Adversarial
 Polytope](https://github.com/locuslab/convex_adversarial) (Wong et al., 2018)
 and (ordinary) [CROWN](https://github.com/huanzhang12/RecurJac-and-CROWN)
 (Zhang et al., 2018).
@@ -193,6 +193,12 @@ python train.py --config your_config.json
 Compute CROWN Verified Errors
 -------------------
 
+Unlike the [reference
+implementation](https://github.com/huanzhang12/RecurJac-and-CROWN) in (Zhang et
+al., 2018) which only supports linear layers and is implemented in Numpy, this
+repository provides an efficient Pytorch implementation of CROWN for
+convolutional neural networks.
+
 In the default setting, the code evaluates IBP verified error. To compute CROWN
 verified error, simply set `eval_params:method_params:bound_type=crown-full` in
 the evaluation command. Also, you may need to reduce batch size by setting
@@ -205,12 +211,17 @@ Example:
 python eval.py "eval_params:epsilon=0.3" "eval_params:loader_params:test_batch_size=128" "eval_params:method_params:bound_type=crown-full" --config config/mnist_crown.json --path_prefix crown-ibp_models/mnist_0.3_mnist_crown --model_subset 1
 ```
 
-Note that CROWN bounds are relatively loose on IBP trained models; the above
-command produces verified error around 50% (while IBP verified error is around
-10%).  Additionally computing verified error on the entire test set (10,000
-images) can take some time (a few minutes to a few hours).  The time is similar
-to 1 epoch training time of (Wong & Kolter, ICML 2018), so it is still feasible
-to run all 10,000 examples for most small models.
+Note that CROWN bounds are relatively loose on (CROWN-)IBP trained models; the
+above command produces verified error around 50% (while IBP verified error is
+around 10%). However, CROWN should achieve much tighter bounds on naturally
+trained, PGD adversarially trained or randomly initialized networks, and is an
+useful tool for giving linearized upper and lower bounds for general neural
+networks.
+
+Computing CROWN verified error on the entire test set (10,000 images) can take
+some time (a few minutes to a few hours).  The time is similar to 1 epoch
+training time of (Wong & Kolter, ICML 2018), so it is still feasible to run all
+10,000 examples for most models.
 
 
 Reproducing Paper Results
