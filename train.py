@@ -106,12 +106,14 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         sa_labels = sa[labels]
         # storing computed lower bounds after scatter
         lb_s = torch.zeros(data.size(0), num_class)
+        ub_s = torch.zeros(data.size(0), num_class)
 
         # FIXME: Assume data is from range 0 - 1
         if kwargs["bounded_input"]:
             assert loader.std == [1,1,1] or loader.std == [1]
-            # bounded input only makes sense for Linf perturbation
-            assert norm == np.inf
+            if norm != np.inf:
+                raise ValueError("bounded input only makes sense for Linf perturbation. "
+                                 "Please set the bounded_input option to false.")
             data_ub = (data + eps).clamp(max=1.0)
             data_lb = (data - eps).clamp(min=0.0)
         else:
@@ -129,6 +131,7 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
             c = c.cuda()
             sa_labels = sa_labels.cuda()
             lb_s = lb_s.cuda()
+            ub_s = ub_s.cuda()
         # convert epsilon to a tensor
         eps_tensor = data.new(1)
         eps_tensor[0] = eps
@@ -142,14 +145,23 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         model_range = output.max().detach().cpu().item() - output.min().detach().cpu().item()
         
         """
+        torch.set_printoptions(threshold=5000)
         print('prediction:  ', output)
         ub, lb, _, _, _, _ = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
         lb = lb_s.scatter(1, sa_labels, lb)
+        ub = ub_s.scatter(1, sa_labels, ub)
         print('interval ub: ', ub)
         print('interval lb: ', lb)
-        lb, _ = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+        ub, _, lb, _ = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=True, lower=True)
         lb = lb_s.scatter(1, sa_labels, lb)
-        print('full lb: ', lb)
+        ub = ub_s.scatter(1, sa_labels, ub)
+        print('crown-ibp ub: ', ub)
+        print('crown-ibp lb: ', lb)
+        ub, _, lb, _ = model.full_backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=True, lower=True)
+        lb = lb_s.scatter(1, sa_labels, lb)
+        ub = ub_s.scatter(1, sa_labels, ub)
+        print('full-crown ub: ', ub)
+        print('full-crown lb: ', lb)
         input()
         """
 
@@ -193,6 +205,10 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
                 lb = f(c)
             elif kwargs["bound_type"] == "interval":
                 ub, lb, relu_activity, unstable, dead, alive = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+            elif kwargs["bound_type"] == "crown-full":
+                _, _, lb, _ = model.full_backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=False, lower=True)
+                unstable = dead = alive = 0
+                relu_activity =torch.tensor([0])
             elif kwargs["bound_type"] == "crown-interval":
                 ub, ilb, relu_activity, unstable, dead, alive = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
                 crown_final_factor = kwargs['final-beta']
@@ -219,11 +235,11 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
                         runnerup_c = runnerup_c.unsqueeze(1).detach()
                         # print(runnerup_c)
                         # get the bound for runnerup_c
-                        clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+                        _, _, clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
                         clb = clb.expand(clb.size(0), num_class - 1)
                     else:
                         # get the CROWN bound using interval bounds
-                        clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+                        _, _, clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
                         bound_bias.update(bias.sum() / data.size(0))
                     # how much better is crown-ibp better than ibp?
                     diff = (clb - ilb).sum().item()
@@ -266,13 +282,14 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
             loss.backward()
             opt.step()
 
-        batch_time.update(time.time() - start)
         losses.update(loss.cpu().detach().numpy(), data.size(0))
 
         if verbose or method != "natural":
             robust_ce_losses.update(robust_ce.cpu().detach().numpy(), data.size(0))
             # robust_ce_losses.update(robust_ce, data.size(0))
             robust_errors.update(torch.sum((lb<0).any(dim=1)).cpu().detach().numpy() / data.size(0), data.size(0))
+
+        batch_time.update(time.time() - start)
         if i % 50 == 0 and train:
             logger.log(  '[{:2d}:{:4d}]: eps {:4f}  '
                     'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
@@ -338,15 +355,14 @@ def main(args):
     global_train_config = config["training_params"]
     models, model_names = config_modelloader(config)
 
-    converted_models = [BoundSequential.convert(model) for model in models]
-
-    for model, model_id, model_config in zip(converted_models, model_names, config["models"]):
-        model = model.cuda()
-
+    for model, model_id, model_config in zip(models, model_names, config["models"]):
         # make a copy of global training config, and update per-model config
         train_config = copy.deepcopy(global_train_config)
         if "training_params" in model_config:
             train_config = update_dict(train_config, model_config["training_params"])
+
+        model = BoundSequential.convert(model, train_config["method_params"]["bound_opts"])
+        model = model.cuda()
 
         # read training parameters from config file
         epochs = train_config["epochs"]
