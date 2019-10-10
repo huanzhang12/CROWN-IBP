@@ -15,20 +15,24 @@ found in our paper:
 
 Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Duane Boning, and Cho-Jui Hsieh, "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([**https://arxiv.org/abs/1906.06316**](https://arxiv.org/abs/1906.06316))
 
-Our repository provides **high quality PyTorch implementations** of Pure-IBP,
-Natural-IBP [(Gowal et
-al., 2018)](https://github.com/deepmind/interval-bound-propagation), CROWN-IBP (our
-algorithm) and [Convex Adversarial
-Polytope](https://github.com/locuslab/convex_adversarial) (Wong et al., 2018).
+Our repository provides **high quality PyTorch implementations** of IBP [(Gowal
+et al., 2018)](https://github.com/deepmind/interval-bound-propagation),
+CROWN-IBP (our algorithm), [Convex Adversarial
+Polytope](https://github.com/locuslab/convex_adversarial) (Wong et al., 2018)
+and (ordinary) [CROWN](https://github.com/huanzhang12/RecurJac-and-CROWN)
+(Zhang et al., 2018).
 
 News
 ---------
 
+* Oct 10, 2019: Ordinary CROWN bounds have been added for verification propose.
+  See [instructions](#compute-crown-verified-errors). The implementation takes
+  advantage of CNN on GPUs and is efficient for verification.
 * July 14, 2019: Code has been further optimized and CROWN-IBP training is
   roughly 2-3 times faster than before. For reproducing paper results you can
-  checkout the old code in ['paper-v1'](../../tree/paper-v1) branch. Otherwise it is
-  recommended to use this new version.
-* Jun 8, 2019: Initial release
+  checkout the old code in ['paper-v1'](../../tree/paper-v1) branch. Otherwise
+  it is recommended to use this new version.
+* Jun 8, 2019: Initial release.
 
 Intro
 ---------
@@ -65,6 +69,13 @@ intermediate layers' pre-activation bounds and use a CROWN-style bound to
 obtain the final layer's bounds in a backward pass. The combination of IBP and
 CROWN gives us an efficient, stable and well-performing certified defense
 method, strictly within the framework of robust optimization.
+
+This repository also includes a Pytorch implementation of (ordinary) CROWN,
+which computes the full convex relaxation based bounds and can be used to
+compute CROWN verified error. Although it is also okay to use the ordinary
+CROWN bounds for training (the code supports it, see example config files in
+`experimental` folder), but it is very inefficient comparing to CROWN-IBP, and
+also produces models with worse verified error due to over-regularization.
 
 Getting Started with the Code
 ---------
@@ -177,6 +188,30 @@ Then your will be able to train with CROWN-IBP with your JSON:
 ```bash
 python train.py --config your_config.json
 ```
+
+
+Compute CROWN Verified Errors
+-------------------
+
+In the default setting, the code evaluates IBP verified error. To compute CROWN
+verified error, simply set `eval_params:method_params:bound_type=crown-full` in
+the evaluation command. Also, you may need to reduce batch size by setting
+`eval_params:loader_params:test_batch_size` to a small value, since the CROWN
+bounds are memory intensive to compute.
+
+Example:
+
+```
+python eval.py "eval_params:epsilon=0.3" "eval_params:loader_params:test_batch_size=128" "eval_params:method_params:bound_type=crown-full" --config config/mnist_crown.json --path_prefix crown-ibp_models/mnist_0.3_mnist_crown --model_subset 1
+```
+
+Note that CROWN bounds are relatively loose on IBP trained models; the above
+command produces verified error around 50% (while IBP verified error is around
+10%).  Additionally computing verified error on the entire test set (10,000
+images) can take some time (a few minutes to a few hours).  The time is similar
+to 1 epoch training time of (Wong & Kolter, ICML 2018), so it is still feasible
+to run all 10,000 examples for most small models.
+
 
 Reproducing Paper Results
 -------------------
