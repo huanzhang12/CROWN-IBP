@@ -230,6 +230,12 @@ class BoundReLU(ReLU):
         if self.bound_opts.get("same-slope", False):
             # the same slope for upper and lower
             lower_d = upper_d
+        elif self.bound_opts.get("zero-lb", False):
+            # Always use slope 0 as lower bound. Any value between 0 and 1 is a valid lower bound for CROWN
+            lower_d = (upper_d >= 1.0).float()
+        elif self.bound_opts.get("one-lb", False):
+            # Always use slope 1 as lower bound
+            lower_d = (upper_d > 0.0).float()
         else:
             lower_d = (upper_d > 0.5).float()
         uA = lA = None

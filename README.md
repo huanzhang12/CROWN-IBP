@@ -223,6 +223,26 @@ some time (a few minutes to a few hours).  The time is similar to 1 epoch
 training time of (Wong & Kolter, ICML 2018), so it is still feasible to run all
 10,000 examples for most models.
 
+Several **bound options** for CROWN are provided:
+
+`same-slope`: when set to `true`, use the same lower bound slope as the upper
+bound slope for unstable ReLU neurons. This reduces computation cost by a half,
+but usually leads to worse verified error.
+
+`zero-lb`: set the lower bound slope to 0 for unstable ReLU neurons. CROWN
+provides a valid bound for any slope from 0 to 1, and these slopes correspond
+to dual variables in dual LP formulation; see (Salman et al. 2019) for more
+details. Sometimes setting this option to `true` can improve verified error.
+
+`one-lb`: set the lower bound slope to 1 for unstable ReLU neurons. Sometimes
+setting this option to `true` can improve verified error.
+
+Example (setting `zero-lb` to `true` to improve CROWN verified error from 53.31%
+to 10.61%):
+
+```
+python eval.py "eval_params:method_params:bound_opts:zero-lb=true" "eval_params:epsilon=0.3" "eval_params:loader_params:test_batch_size=128" "eval_params:method_params:bound_type=crown-full" --config config/mnist_crown.json --path_prefix crown-ibp_models/mnist_0.3_mnist_crown --model_subset 1
+```
 
 Reproducing Paper Results
 -------------------
@@ -272,4 +292,8 @@ Huan Zhang, Tsui-Wei Weng, Pin-Yu Chen, Cho-Jui Hsieh, and Luca Daniel.
 Efficient neural network robustness certification with general activation
 functions. In Advances in neural information processing systems (NIPS), pp.
 4939-4948. 2018.
+
+Hadi Salman, Greg Yang, Huan Zhang, Cho-Jui Hsieh and Pengchuan Zhang. A Convex
+Relaxation Barrier to Tight Robustness Verification of Neural Networks. To
+appear in NeurIPS 2019.
 
