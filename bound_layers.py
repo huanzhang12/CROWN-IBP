@@ -7,10 +7,11 @@
 ##
 import torch
 import numpy as np
+from torch.nn import DataParallel
 from torch.nn import Sequential, Conv2d, Linear, ReLU
 from model_defs import Flatten, model_mlp_any
 import torch.nn.functional as F
-
+from itertools import chain
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -139,6 +140,7 @@ class BoundConv2d(Conv2d):
     def forward(self, input):
         output = super(BoundConv2d, self).forward(input)
         self.output_shape = output.size()[1:]
+        self.input_shape = input.size()[1:]
         return output
 
     def bound_backward(self, last_uA, last_lA):
@@ -149,7 +151,10 @@ class BoundConv2d(Conv2d):
             shape = last_A.size()
             # propagate A to the next layer, with batch concatenated together
             if compute_A:
-                next_A = F.conv_transpose2d(last_A.view(shape[0] * shape[1], *shape[2:]), self.weight, None, stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
+                
+                output_padding0 = int(self.input_shape[1]) - (int(self.output_shape[1]) - 1) * self.stride[0] + 2 * self.padding[0] - int(self.weight.size()[2])
+                output_padding1 = int(self.input_shape[2]) - (int(self.output_shape[2]) - 1) * self.stride[1] + 2 * self.padding[1] - int(self.weight.size()[3]) 
+                next_A = F.conv_transpose2d(last_A.view(shape[0] * shape[1], *shape[2:]), self.weight, None, stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups, output_padding=(output_padding0, output_padding1))
                 next_A = next_A.view(shape[0], shape[1], *next_A.shape[1:])
                 logger.debug('next_A %s', next_A.size())
             else:
@@ -157,7 +162,7 @@ class BoundConv2d(Conv2d):
             logger.debug('bias %s', self.bias.size())
             # dot product, compute the bias of this layer, do a dot product
             sum_bias = (last_A.sum((3,4)) * self.bias).sum(2)
-            logger.debug('sum_bias %s', sum_bias.size())
+            logger.debug('sum_bias %s', sum_bias.size()) 
             return next_A, sum_bias
         # if the slope is the same (Fast-Lin) and both matrices are given, only need to compute one of them
         if self.bound_opts.get("same-slope", False) and (last_uA is not None) and (last_lA is not None):
@@ -212,13 +217,13 @@ class BoundReLU(ReLU):
         self.unstab = ((h_L < -guard_eps) & (h_U > guard_eps))
         # stored upper and lower bounds will be used for backward bound propagation
         self.upper_u = h_U
-        self.lower_l = h_L
+        self.lower_l = h_L 
         tightness_loss = self.unstab.sum()
         # tightness_loss = torch.min(h_U_unstab * h_U_unstab, h_L_unstab * h_L_unstab).sum()
-        return norm, F.relu(h_U), F.relu(h_L), tightness_loss, tightness_loss.detach().cpu().item(), \
-               (h_U < 0).sum().detach().cpu().item(), (h_L > 0).sum().detach().cpu().item()
+        return norm, F.relu(h_U), F.relu(h_L), tightness_loss, tightness_loss, \
+               (h_U < 0).sum(), (h_L > 0).sum()
 
-    def bound_backward(self, last_uA, last_lA):
+    def bound_backward(self, last_uA, last_lA): 
         lb_r = self.lower_l.clamp(max=0)
         ub_r = self.upper_u.clamp(min=0)
         # avoid division by 0 when both lb_r and ub_r are 0
@@ -256,7 +261,7 @@ class BoundReLU(ReLU):
             if self.bound_opts.get("same-slope", False):
                 lA = uA if uA is not None else lower_d * last_lA
             else:
-                pos_lA = last_lA.clamp(min=0)
+                pos_lA = last_lA.clamp(min=0) 
                 lA = upper_d * neg_lA + lower_d * pos_lA
             mult_lA = neg_lA.view(last_lA.size(0), last_lA.size(1), -1)
             lbias = mult_lA.matmul(upper_b.view(upper_b.size(0), -1, 1)).squeeze(-1)
@@ -265,7 +270,7 @@ class BoundReLU(ReLU):
 
 class BoundSequential(Sequential):
     def __init__(self, *args):
-        super(BoundSequential, self).__init__(*args)
+        super(BoundSequential, self).__init__(*args) 
 
     ## Convert a Pytorch model to a model with bounds
     # @param sequential_model Input pytorch model
@@ -273,7 +278,11 @@ class BoundSequential(Sequential):
     @staticmethod
     def convert(sequential_model, bound_opts=None):
         layers = []
-        for l in sequential_model:
+        if isinstance(sequential_model, Sequential):
+            seq_model = sequential_model
+        else:
+            seq_model = sequential_model.module
+        for l in seq_model:
             if isinstance(l, Linear):
                 layers.append(BoundLinear.convert(l, bound_opts))
             if isinstance(l, Conv2d):
@@ -284,6 +293,24 @@ class BoundSequential(Sequential):
                 layers.append(BoundFlatten(bound_opts))
         return BoundSequential(*layers)
 
+    ## The __call__ function is overwritten for DataParallel
+    def __call__(self, *input, **kwargs):
+        
+        if "method_opt" in kwargs:
+            opt = kwargs["method_opt"]
+            kwargs.pop("method_opt")
+        else:
+            raise ValueError("Please specify the 'method_opt' as the last argument.")
+        if "disable_multi_gpu" in kwargs:
+            kwargs.pop("disable_multi_gpu")
+        if opt == "full_backward_range":
+            return self.full_backward_range(*input, **kwargs)
+        elif opt == "backward_range":
+            return self.backward_range(*input, **kwargs)
+        elif opt == "interval_range": 
+            return self.interval_range(*input, **kwargs)
+        else:
+            return super(BoundSequential, self).__call__(*input, **kwargs)
 
     ## Full CROWN bounds with all intermediate layer bounds computed by CROWN
     ## This can be slow for training, and it is recommend to use it for verification only
@@ -354,7 +381,7 @@ class BoundSequential(Sequential):
         modules = list(self._modules.values()) if modules is None else modules
         upper_A = C if upper else None
         lower_A = C if lower else None
-        upper_sum_b = lower_sum_b = 0
+        upper_sum_b = lower_sum_b = x_U.new([0])
         for i, module in enumerate(reversed(modules)):
             upper_A, upper_b, lower_A, lower_b = module.bound_backward(upper_A, lower_A)
             # squeeze is for using broadcasting in the cast that all examples use the same spec
@@ -386,6 +413,10 @@ class BoundSequential(Sequential):
             return bound
         lb = _get_concrete_bound(lower_A, lower_sum_b, sign = -1)
         ub = _get_concrete_bound(upper_A, upper_sum_b, sign = +1)
+        if ub is None:
+            ub = x_U.new([np.inf])
+        if lb is None:
+            lb = x_L.new([-np.inf]) 
         return ub, upper_sum_b, lb, lower_sum_b
 
     def interval_range(self, norm=np.inf, x_U=None, x_L=None, eps=None, C=None):
@@ -411,3 +442,35 @@ class BoundSequential(Sequential):
         alive += a
         return h_U, h_L, losses, unstable, dead, alive
 
+
+class BoundDataParallel(DataParallel):
+    # This is a customized DataParallel class for our project
+    def __init__(self, *inputs, **kwargs):
+        super(BoundDataParallel, self).__init__(*inputs, **kwargs)
+        self._replicas = None
+    # Overide the forward method
+    def forward(self, *inputs, **kwargs):
+        disable_multi_gpu = False
+        if "disable_multi_gpu" in kwargs:
+            disable_multi_gpu = kwargs["disable_multi_gpu"]
+            kwargs.pop("disable_multi_gpu")
+         
+        if not self.device_ids or disable_multi_gpu: 
+            return self.module(*inputs, **kwargs)
+       
+        # Only replicate during forwarding propagation. Not during interval bounds
+        # and CROWN-IBP bounds, since weights have not been updated. This saves 2/3
+        # of communication cost.
+        if self._replicas is None or kwargs.get("method_opt", "forward") == "forward":
+            self._replicas = self.replicate(self.module, self.device_ids)  
+
+        for t in chain(self.module.parameters(), self.module.buffers()):
+            if t.device != self.src_device_obj:
+                raise RuntimeError("module must have its parameters and buffers "
+                                   "on device {} (device_ids[0]) but found one of "
+                                   "them on device: {}".format(self.src_device_obj, t.device))
+        inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids) 
+        if len(self.device_ids) == 1:
+            return self.module(*inputs[0], **kwargs[0])
+        outputs = self.parallel_apply(self._replicas[:len(inputs)], inputs, kwargs)
+        return self.gather(outputs, self.output_device)

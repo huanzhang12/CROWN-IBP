@@ -9,15 +9,18 @@
         "lr": 5e-4,
         "lr_decay_step": 10,
         "lr_decay_factor": 0.5,
+        "lr_decay_milestones": [],
         "weight_decay": 0.0,
         "optimizer": "adam",
         "starting_epsilon": 0.00,
         "epsilon": 0.50,
         "schedule_length":61,
+        "schedule_type": "linear",
         "norm": "Linf",
-        "verbose": false,
+        "verbose": false, 
+        "multi_gpu": false, 
         "loader_params": {"batch_size": 128, "shuffle_train": true},
-        "method_params": {"batch_size": 128, "shuffle_train": true, "runnerup_only": false, "activity_reg": 0.000, "final-beta": 0.0, "final-kappa": 0.5, "convex-proj": 50, "bound_opts":{"same-slope": false, "zero-lb": false, "one-lb": false}}
+        "method_params": {"batch_size": 128, "shuffle_train": true, "runnerup_only": false, "activity_reg": 0.000, "l1_reg": 0.000, "final-beta": 0.0, "final-kappa": 0.5, "convex-proj": 50, "bound_opts":{"same-slope": false, "zero-lb": false, "one-lb": false}, "batch_multiplier": 1}
     },
     "eval_params": {
         "method": "robust",

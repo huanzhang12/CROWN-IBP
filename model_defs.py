@@ -13,13 +13,8 @@ import torch.nn as nn
 
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
-import torch.optim as optim
-from torchvision import datasets, transforms
-from torch.autograd import Variable
 import argparse
-from pdb import set_trace as st
 import numpy as np 
-import math
 import collections
 
 
@@ -88,26 +83,6 @@ def model_cnn_2layer(in_ch, in_dim, width, linear_size=128):
 # parameter in_dim: input dimension, 28 for MNIST and 32 for CIFAR
 # parameter kernel_size: convolution kernel size, 3 or 5
 # parameter width: width multiplier
-def model_cnn_3layer(in_ch, in_dim, kernel_size, width):
-    if kernel_size == 5:
-        h = (in_dim - 4) // 4
-    elif kernel_size == 3:
-        h = in_dim // 4
-    else:
-        raise ValueError("Unsupported kernel size")
-    model = nn.Sequential(
-        nn.Conv2d(in_ch, 4*width, kernel_size=kernel_size, stride=1, padding=1),
-        nn.ReLU(),
-        nn.Conv2d(4*width, 8*width, kernel_size=kernel_size, stride=1, padding=1),
-        nn.ReLU(),
-        nn.Conv2d(8*width, 8*width, kernel_size=4, stride=4, padding=0),
-        nn.ReLU(),
-        Flatten(),
-        nn.Linear(8*width*h*h, width*64),
-        nn.Linear(width*64, 10)
-    )
-    return model
-
 def model_cnn_3layer_fixed(in_ch, in_dim, kernel_size, width, linear_size = None):
     if linear_size is None:
         linear_size = width * 64
@@ -187,54 +162,6 @@ def model_cnn_10layer(in_ch, in_dim, width):
         nn.Linear(2*2*64*width,10)
     )
     return model
-
-# below are utilities for feature masking, not used
-class FeatureMask2D(nn.Module):
-    def __init__(self, in_ch, in_dim, keep = 1.0, seed = 0):
-        super(FeatureMask2D, self).__init__()
-        self.in_ch = in_ch
-        self.in_dim = in_dim
-        self.keep = keep
-        self.seed = seed
-        state = torch.get_rng_state()
-        torch.manual_seed(seed)
-        self.weight = torch.rand((1, in_ch, in_dim, in_dim))
-        torch.set_rng_state(state)
-        self.weight.require_grad = False
-        self.weight.data[:] = (self.weight.data <= keep)
-    
-    # we don't want to register self.weight as a parameter, as it is not trainable
-    # but we need to be able to apply operations on it
-    def _apply(self, fn):
-        super(FeatureMask2D, self)._apply(fn)
-        self.weight.data = fn(self.weight.data)
-
-    def forward(self, x):
-        return x * self.weight
-
-    def extra_repr(self):
-        return 'in_ch={}, in_dim={}, keep={}, seed={}'.format(self.in_ch, self.in_dim, self.keep, self.seed)
-
-def add_feature_subsample(model, in_ch, in_dim, keep = 1.0, seed = 0):
-    layers = list(model.children())
-    # add a new masking layer
-    mask_layer = FeatureMask2D(in_ch, in_dim, keep, seed)
-    new_model = model.__class__()
-    new_model.add_module("__mask_layer", mask_layer)
-    for name, layer in model.named_modules():
-        # print(name, layer)
-        if name and '.' not in name:
-            new_model.add_module(name, layer)
-    return new_model
-
-def remove_feature_subsample(model):
-    layers = list(model.children())
-    # remove the first layer and rebuild
-    layers = layers[1:]
-    return model.__class__(*layers)
-
-
-
 
 
 # below are utilities for model converters, not used during training

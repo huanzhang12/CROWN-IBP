@@ -11,14 +11,13 @@ import torch
 from torch.nn import Sequential, Linear, ReLU, CrossEntropyLoss
 import numpy as np
 from datasets import loaders
-from model_defs import Flatten, model_mlp_any, model_cnn_1layer, model_cnn_2layer, model_cnn_4layer, model_cnn_3layer
-from bound_layers import BoundSequential, BoundLinear, BoundConv2d
+from bound_layers import BoundSequential, BoundLinear, BoundConv2d, BoundDataParallel
 import torch.optim as optim
 # from gpu_profile import gpu_profile
 import time
 from datetime import datetime
 from convex_adversarial import DualNetwork
-
+from eps_scheduler import EpsilonScheduler
 from config import load_config, get_path, config_modelloader, config_dataloader, update_dict
 from argparser import argparser
 # sys.settrace(gpu_profile)
@@ -50,9 +49,10 @@ class Logger(object):
             self.log_file.flush()
 
 
-def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, train, opt, method, **kwargs):
+def Train(model, t, loader, eps_scheduler, max_eps, norm, logger, verbose, train, opt, method, **kwargs):
     # if train=True, use training mode
     # if train=False, use test mode, no back prop
+    
     num_class = 10
     losses = AverageMeter()
     l1_losses = AverageMeter()
@@ -67,11 +67,11 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
     dead_neurons = AverageMeter()
     alive_neurons = AverageMeter()
     batch_time = AverageMeter()
-    # initial 
+    batch_multiplier = kwargs.get("batch_multiplier", 1)  
     kappa = 1
-    factor = 1
+    beta = 1
     if train:
-        model.train()
+        model.train() 
     else:
         model.eval()
     # pregenerate the array for specifications, will be used for scatter
@@ -82,20 +82,23 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
                 sa[i][j] = j
             else:
                 sa[i][j] = j + 1
-    sa = torch.LongTensor(sa)
-    total = len(loader.dataset)
-    batch_size = loader.batch_size
+    sa = torch.LongTensor(sa) 
+    batch_size = loader.batch_size * batch_multiplier
+    if batch_multiplier > 1 and train:
+        logger.log('Warning: Large batch training. The equivalent batch size is {} * {} = {}.'.format(batch_multiplier, loader.batch_size, batch_size))
+    # per-channel std and mean
     std = torch.tensor(loader.std).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
-
-    batch_eps = np.linspace(start_eps, end_eps, (total // batch_size) + 1)
+    mean = torch.tensor(loader.mean).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+ 
     model_range = 0.0
-    if end_eps < 1e-6:
+    end_eps = eps_scheduler.get_eps(t+1, 0)
+    if end_eps < np.finfo(np.float32).tiny:
         logger.log('eps {} close to 0, using natural training'.format(end_eps))
         method = "natural"
     for i, (data, labels) in enumerate(loader): 
         start = time.time()
-        eps = batch_eps[i]
-        if train:   
+        eps = eps_scheduler.get_eps(t, int(i//batch_multiplier)) 
+        if train and i % batch_multiplier == 0:   
             opt.zero_grad()
         # generate specifications
         c = torch.eye(num_class).type_as(data)[labels].unsqueeze(1) - torch.eye(num_class).type_as(data).unsqueeze(0) 
@@ -108,19 +111,21 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         lb_s = torch.zeros(data.size(0), num_class)
         ub_s = torch.zeros(data.size(0), num_class)
 
-        # FIXME: Assume data is from range 0 - 1
+        # FIXME: Assume unnormalized data is from range 0 - 1
         if kwargs["bounded_input"]:
-            assert loader.std == [1,1,1] or loader.std == [1]
             if norm != np.inf:
                 raise ValueError("bounded input only makes sense for Linf perturbation. "
                                  "Please set the bounded_input option to false.")
-            data_ub = (data + eps).clamp(max=1.0)
-            data_lb = (data - eps).clamp(min=0.0)
+            data_max = torch.reshape((1. - mean) / std, (1, -1, 1, 1))
+            data_min = torch.reshape((0. - mean) / std, (1, -1, 1, 1))
+            data_ub = torch.min(data + (eps / std), data_max)
+            data_lb = torch.max(data - (eps / std), data_min)
         else:
             if norm == np.inf:
                 data_ub = data + (eps / std)
                 data_lb = data - (eps / std)
             else:
+                # For other norms, eps will be used instead.
                 data_ub = data_lb = data
 
         if list(model.parameters())[0].is_cuda:
@@ -137,33 +142,34 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         eps_tensor[0] = eps
 
         # omit the regular cross entropy, since we use robust error
-        output = model(data)
+        output = model(data, method_opt="forward", disable_multi_gpu = (method == "natural"))
         regular_ce = CrossEntropyLoss()(output, labels)
         regular_ce_losses.update(regular_ce.cpu().detach().numpy(), data.size(0))
         errors.update(torch.sum(torch.argmax(output, dim=1)!=labels).cpu().detach().numpy()/data.size(0), data.size(0))
         # get range statistic
         model_range = output.max().detach().cpu().item() - output.min().detach().cpu().item()
         
-        """
+        '''
         torch.set_printoptions(threshold=5000)
         print('prediction:  ', output)
-        ub, lb, _, _, _, _ = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+        ub, lb, _, _, _, _ = model(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, method_opt="interval_range")
         lb = lb_s.scatter(1, sa_labels, lb)
         ub = ub_s.scatter(1, sa_labels, ub)
         print('interval ub: ', ub)
         print('interval lb: ', lb)
-        ub, _, lb, _ = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=True, lower=True)
+        ub, _, lb, _ = model(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=True, lower=True, method_opt="backward_range")
         lb = lb_s.scatter(1, sa_labels, lb)
         ub = ub_s.scatter(1, sa_labels, ub)
         print('crown-ibp ub: ', ub)
-        print('crown-ibp lb: ', lb)
-        ub, _, lb, _ = model.full_backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=True, lower=True)
+        print('crown-ibp lb: ', lb) 
+        ub, _, lb, _ = model(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=True, lower=True, method_opt="full_backward_range")
         lb = lb_s.scatter(1, sa_labels, lb)
         ub = ub_s.scatter(1, sa_labels, ub)
         print('full-crown ub: ', ub)
         print('full-crown lb: ', lb)
         input()
-        """
+        '''
+        
 
         if verbose or method != "natural":
             if kwargs["bound_type"] == "convex-adv":
@@ -194,6 +200,7 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
                     # bounded input is only for Linf
                     if kwargs["bounded_input"]:
                         # FIXME the bounded projection in convex_adversarial has a bug, data range must be positive
+                        assert loader.std == [1,1,1] or loader.std == [1]
                         data_l = 0.0
                         data_u = 1.0
                     else:
@@ -204,16 +211,17 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
                 f = DualNetwork(model, data, convex_eps, proj = proj, norm_type = norm_type, bounded_input = kwargs["bounded_input"], data_l = data_l, data_u = data_u)
                 lb = f(c)
             elif kwargs["bound_type"] == "interval":
-                ub, lb, relu_activity, unstable, dead, alive = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+                ub, lb, relu_activity, unstable, dead, alive = model(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, method_opt="interval_range")
             elif kwargs["bound_type"] == "crown-full":
-                _, _, lb, _ = model.full_backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=False, lower=True)
-                unstable = dead = alive = 0
-                relu_activity =torch.tensor([0])
+                _, _, lb, _ = model(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, upper=False, lower=True, method_opt="full_backward_range")
+                unstable = dead = alive = relu_activity = torch.tensor([0])
             elif kwargs["bound_type"] == "crown-interval":
-                ub, ilb, relu_activity, unstable, dead, alive = model.interval_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
-                crown_final_factor = kwargs['final-beta']
-                factor = (max_eps - eps * (1.0 - crown_final_factor)) / max_eps
-                if factor < 1e-5:
+                # Enable multi-GPU only for the computationally expensive CROWN-IBP bounds, 
+                # not for regular forward propagation and IBP because the communication overhead can outweigh benefits, giving little speedup. 
+                ub, ilb, relu_activity, unstable, dead, alive = model(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, method_opt="interval_range")
+                crown_final_beta = kwargs['final-beta']
+                beta = (max_eps - eps * (1.0 - crown_final_beta)) / max_eps
+                if beta < 1e-5:
                     lb = ilb
                 else:
                     if kwargs["runnerup_only"]:
@@ -235,32 +243,32 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
                         runnerup_c = runnerup_c.unsqueeze(1).detach()
                         # print(runnerup_c)
                         # get the bound for runnerup_c
-                        _, _, clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+                        _, _, clb, bias = model(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, method_opt="backward_range")
                         clb = clb.expand(clb.size(0), num_class - 1)
                     else:
-                        # get the CROWN bound using interval bounds
-                        _, _, clb, bias = model.backward_range(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c)
+                        # get the CROWN bound using interval bounds 
+                        _, _, clb, bias = model(norm=norm, x_U=data_ub, x_L=data_lb, eps=eps, C=c, method_opt="backward_range")
                         bound_bias.update(bias.sum() / data.size(0))
                     # how much better is crown-ibp better than ibp?
                     diff = (clb - ilb).sum().item()
                     bound_diff.update(diff / data.size(0), data.size(0))
                     # lb = torch.max(lb, clb)
-                    lb = clb * factor + ilb * (1 - factor)
+                    lb = clb * beta + ilb * (1 - beta)
             else:
-                raise RuntimeError("Unknown bound_type " + kwargs["bound_type"])
-
+                raise RuntimeError("Unknown bound_type " + kwargs["bound_type"]) 
             lb = lb_s.scatter(1, sa_labels, lb)
             robust_ce = CrossEntropyLoss()(-lb, labels)
             if kwargs["bound_type"] != "convex-adv":
-                relu_activities.update(relu_activity.detach().cpu().item() / data.size(0), data.size(0))
-                unstable_neurons.update(unstable / data.size(0), data.size(0))
-                dead_neurons.update(dead / data.size(0), data.size(0))
-                alive_neurons.update(alive / data.size(0), data.size(0))
+                
+                relu_activities.update(relu_activity.sum().detach().cpu().item() / data.size(0), data.size(0))
+                unstable_neurons.update(unstable.sum().detach().cpu().item() / data.size(0), data.size(0))
+                dead_neurons.update(dead.sum().detach().cpu().item() / data.size(0), data.size(0))
+                alive_neurons.update(alive.sum().detach().cpu().item() / data.size(0), data.size(0))
 
         if method == "robust":
             loss = robust_ce
         elif method == "robust_activity":
-            loss = robust_ce + kwargs["activity_reg"] * relu_activity
+            loss = robust_ce + kwargs["activity_reg"] * relu_activity.sum()
         elif method == "natural":
             loss = regular_ce
         elif method == "robust_natural":
@@ -270,17 +278,19 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         else:
             raise ValueError("Unknown method " + method)
 
-        if "l1_reg" in kwargs:
+        if train and kwargs["l1_reg"] > np.finfo(np.float32).tiny:
             reg = kwargs["l1_reg"]
             l1_loss = 0.0
             for name, param in model.named_parameters():
                 if 'bias' not in name:
-                    l1_loss = l1_loss + (reg * torch.sum(torch.abs(param)))
+                    l1_loss = l1_loss + torch.sum(torch.abs(param))
+            l1_loss = reg * l1_loss
             loss = loss + l1_loss
             l1_losses.update(l1_loss.cpu().detach().numpy(), data.size(0))
         if train:
             loss.backward()
-            opt.step()
+            if i % batch_multiplier == 0 or i == len(loader) - 1:
+                opt.step()
 
         losses.update(loss.cpu().detach().numpy(), data.size(0))
 
@@ -306,7 +316,7 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
                     'Bias {bias.val:.5f} ({bias.avg:.5f})  '
                     'Diff {diff.val:.5f} ({diff.avg:.5f})  '
                     'R {model_range:.3f}  '
-                    'beta {factor:.3f} ({factor:.3f})  '
+                    'beta {beta:.3f} ({beta:.3f})  '
                     'kappa {kappa:.3f} ({kappa:.3f})  '.format(
                     t, i, eps, batch_time=batch_time,
                     loss=losses, errors=errors, robust_errors = robust_errors, l1_loss = l1_losses,
@@ -314,7 +324,7 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
                     unstable = unstable_neurons, dead = dead_neurons, alive = alive_neurons,
                     tight = relu_activities, bias = bound_bias, diff = bound_diff,
                     model_range = model_range, 
-                    factor=factor, kappa = kappa))
+                    beta=beta, kappa = kappa))
     
                     
     logger.log(  '[FINAL RESULT epoch:{:2d} eps:{:.4f}]: '
@@ -332,7 +342,7 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         'Err {errors.val:.4f} ({errors.avg:.4f})  '
         'Rob Err {robust_errors.val:.4f} ({robust_errors.avg:.4f})  '
         'R {model_range:.3f}  '
-        'beta {factor:.3f} ({factor:.3f})  '
+        'beta {beta:.3f} ({beta:.3f})  '
         'kappa {kappa:.3f} ({kappa:.3f})  \n'.format(
         t, eps, batch_time=batch_time,
         loss=losses, errors=errors, robust_errors = robust_errors, l1_loss = l1_losses,
@@ -340,8 +350,8 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
         unstable = unstable_neurons, dead = dead_neurons, alive = alive_neurons,
         tight = relu_activities, bias = bound_bias, diff = bound_diff,
         model_range = model_range, 
-        kappa = kappa, factor=factor))
-    for i, l in enumerate(model):
+        kappa = kappa, beta=beta))
+    for i, l in enumerate(model if isinstance(model, BoundSequential) else model.module):
         if isinstance(l, BoundLinear) or isinstance(l, BoundConv2d):
             norm = l.weight.data.detach().view(l.weight.size(0), -1).abs().sum(1).max().cpu()
             logger.log('layer {} norm {}'.format(i, norm))
@@ -353,17 +363,14 @@ def Train(model, t, loader, start_eps, end_eps, max_eps, norm, logger, verbose, 
 def main(args):
     config = load_config(args)
     global_train_config = config["training_params"]
-    models, model_names = config_modelloader(config)
-
+    models, model_names = config_modelloader(config) 
     for model, model_id, model_config in zip(models, model_names, config["models"]):
         # make a copy of global training config, and update per-model config
         train_config = copy.deepcopy(global_train_config)
         if "training_params" in model_config:
             train_config = update_dict(train_config, model_config["training_params"])
-
         model = BoundSequential.convert(model, train_config["method_params"]["bound_opts"])
-        model = model.cuda()
-
+        
         # read training parameters from config file
         epochs = train_config["epochs"]
         lr = train_config["lr"]
@@ -376,7 +383,9 @@ def main(args):
         method = train_config["method"]
         verbose = train_config["verbose"]
         lr_decay_step = train_config["lr_decay_step"]
+        lr_decay_milestones = train_config["lr_decay_milestones"]
         lr_decay_factor = train_config["lr_decay_factor"]
+        multi_gpu = train_config["multi_gpu"]
         # parameters specific to a training method
         method_param = train_config["method_params"]
         norm = float(train_config["norm"])
@@ -388,15 +397,27 @@ def main(args):
             opt = optim.SGD(model.parameters(), lr=lr, momentum=0.9, nesterov=True, weight_decay=weight_decay)
         else:
             raise ValueError("Unknown optimizer")
-
-        eps_schedule = [0] * schedule_start + list(np.linspace(starting_epsilon, end_epsilon, schedule_length))
+       
+        batch_multiplier = train_config["method_params"].get("batch_multiplier", 1)
+        batch_size = train_data.batch_size * batch_multiplier  
+        num_steps_per_epoch = int(np.ceil(1.0 * len(train_data.dataset) / batch_size))
+        epsilon_scheduler = EpsilonScheduler(train_config.get("schedule_type", "linear"), schedule_start * num_steps_per_epoch, ((schedule_start + schedule_length) - 1) * num_steps_per_epoch, starting_epsilon, end_epsilon, num_steps_per_epoch)
         max_eps = end_epsilon
-        lr_scheduler = optim.lr_scheduler.StepLR(opt, step_size=lr_decay_step, gamma=lr_decay_factor)
+        
+        if lr_decay_step:
+            # Use StepLR. Decay by lr_decay_factor every lr_decay_step.
+            lr_scheduler = optim.lr_scheduler.StepLR(opt, step_size=lr_decay_step, gamma=lr_decay_factor)
+            lr_decay_milestones = None
+        elif lr_decay_milestones:
+            # Decay learning rate by lr_decay_factor at a few milestones.
+            lr_scheduler = optim.lr_scheduler.MultiStepLR(opt, milestones=lr_decay_milestones, gamma=lr_decay_factor)
+        else:
+            raise ValueError("one of lr_decay_step and lr_decay_milestones must be not empty.")
         model_name = get_path(config, model_id, "model", load = False)
-        best_model_name = get_path(config, model_id, "best_model", load = False)
-        print(model_name)
+        best_model_name = get_path(config, model_id, "best_model", load = False) 
         model_log = get_path(config, model_id, "train_log")
         logger = Logger(open(model_log, "w"))
+        logger.log(model_name)
         logger.log("Command line:", " ".join(sys.argv[:]))
         logger.log("training configurations:", train_config)
         logger.log("Model structure:")
@@ -405,43 +426,47 @@ def main(args):
         best_err = np.inf
         recorded_clean_err = np.inf
         timer = 0.0
+         
+        if multi_gpu:
+            logger.log("\nUsing multiple GPUs for computing CROWN-IBP bounds\n")
+            model = BoundDataParallel(model) 
+        model = model.cuda()
+        
         for t in range(epochs):
-            lr_scheduler.step(epoch=max(t-len(eps_schedule), 0))
-            if t >= len(eps_schedule):
-                eps = end_epsilon
-            else:
-                epoch_start_eps = eps_schedule[t]
-                if t + 1 >= len(eps_schedule):
-                    epoch_end_eps = epoch_start_eps
-                else:
-                    epoch_end_eps = eps_schedule[t+1]
-            
-            logger.log("Epoch {}, learning rate {}, epsilon {:.6f} - {:.6f}".format(t, lr_scheduler.get_lr(), epoch_start_eps, epoch_end_eps))
+            epoch_start_eps = epsilon_scheduler.get_eps(t, 0)
+            epoch_end_eps = epsilon_scheduler.get_eps(t+1, 0)
+            logger.log("Epoch {}, learning rate {}, epsilon {:.6g} - {:.6g}".format(t, lr_scheduler.get_lr(), epoch_start_eps, epoch_end_eps))
             # with torch.autograd.detect_anomaly():
-            start_time = time.time()
-            Train(model, t, train_data, epoch_start_eps, epoch_end_eps, max_eps, norm, logger, verbose, True, opt, method, **method_param)
+            start_time = time.time() 
+            Train(model, t, train_data, epsilon_scheduler, max_eps, norm, logger, verbose, True, opt, method, **method_param)
+            if lr_decay_step:
+                # Use stepLR. Note that we manually set up epoch number here, so the +1 offset.
+                lr_scheduler.step(epoch=max(t - (schedule_start + schedule_length - 1) + 1, 0))
+            elif lr_decay_milestones:
+                # Use MultiStepLR with milestones.
+                lr_scheduler.step()
             epoch_time = time.time() - start_time
             timer += epoch_time
             logger.log('Epoch time: {:.4f}, Total time: {:.4f}'.format(epoch_time, timer))
             logger.log("Evaluating...")
             with torch.no_grad():
                 # evaluate
-                err, clean_err = Train(model, t, test_data, epoch_end_eps, epoch_end_eps, max_eps, norm, logger, verbose, False, None, method, **method_param)
+                err, clean_err = Train(model, t, test_data, EpsilonScheduler("linear", 0, 0, epoch_end_eps, epoch_end_eps, 1), max_eps, norm, logger, verbose, False, None, method, **method_param)
 
             logger.log('saving to', model_name)
             torch.save({
-                    'state_dict' : model.state_dict(), 
+                    'state_dict' : model.module.state_dict() if multi_gpu else model.state_dict(), 
                     'epoch' : t,
                     }, model_name)
 
             # save the best model after we reached the schedule
-            if t >= len(eps_schedule):
+            if t >= (schedule_start + schedule_length):
                 if err <= best_err:
                     best_err = err
                     recorded_clean_err = clean_err
                     logger.log('Saving best model {} with error {}'.format(best_model_name, best_err))
                     torch.save({
-                            'state_dict' : model.state_dict(), 
+                            'state_dict' : model.module.state_dict() if multi_gpu else model.state_dict(), 
                             'robust_err' : err,
                             'clean_err' : clean_err,
                             'epoch' : t,

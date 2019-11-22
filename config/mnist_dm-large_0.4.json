@@ -1,0 +1,47 @@
+{
+    "model_def": "model_defs_gowal.py",
+    "dataset": "mnist",
+    "path_prefix": "",
+    "models_path": "./mnist_dm-large_0.4/",
+    "training_params": {
+        "method": "robust_natural",
+        "epochs": 200,
+        "lr": 5e-4,
+        "lr_decay_factor": 0.1,
+        "lr_decay_step": null,
+        "lr_decay_milestones": [130, 190],
+        "weight_decay": 0.0,
+        "optimizer": "adam",
+        "schedule_start": 10,
+        "starting_epsilon": 0.0,
+        "epsilon": 0.4,
+        "schedule_length":51,
+        "norm": "inf",
+        "verbose": false,
+        "multi_gpu": true,
+        "loader_params": {"batch_size": 256, "test_batch_size": 256, "shuffle_train": true},
+        "method_params": {"bounded_input": true, "bound_type": "crown-interval"}
+    },
+    "attack_params": {
+        "batch_size": 128,
+        "eps_start": 0.1,
+        "eps_end": 0.4,
+        "eps_step": 4
+    },
+    "eval_params": {
+        "method": "robust",
+        "epsilon": 0.3,
+        "norm": "inf",
+        "verbose": false,
+        "loader_params": {"batch_size": 256, "test_batch_size": 256, "shuffle_train": true},
+        "method_params": {"bounded_input": true, "bound_type": "interval"}
+    },
+    "models": [ 
+        {
+            "model_id": "IBP_large",
+            "model_class": "IBP_large",
+            "model_params": {"in_ch": 1, "in_dim": 28, "linear_size": 512}
+        }
+    ]
+}
+

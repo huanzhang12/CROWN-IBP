@@ -1,0 +1,47 @@
+{
+    "model_def": "model_defs_gowal.py",
+    "dataset": "cifar",
+    "models_path": "./cifar_dm-large_2_255/",
+    "training_params": {
+        "method": "robust",
+        "epochs": 3200,
+        "lr": 0.0005,
+        "lr_decay_factor": 0.1,
+        "lr_decay_step": null,
+        "lr_decay_milestones": [2600, 3040],
+        "weight_decay": 0.0,
+        "optimizer": "adam",
+        "starting_epsilon": 0.0,
+        "epsilon": 0.00862745098,
+        "schedule_start": 320,
+        "schedule_length":1601,
+        "schedule_type": "smoothed",
+        "norm": "inf",
+        "verbose": false,
+        "multi_gpu": true,
+        "loader_params": {"batch_size": 512, "test_batch_size": 256, "shuffle_train": true, "train_random_transform": true, "normalize_input": true},
+        "method_params": {"bounded_input": true, "bound_type": "crown-interval", "batch_multiplier":2, "final-beta":1}
+    },
+    "attack_params": {
+        "batch_size": 128,
+        "eps_start": 0.0,
+        "eps_end": 0.03137,
+        "eps_step": 9
+    },
+    "eval_params": {
+        "method": "robust",
+        "epsilon": 0.007843,
+        "norm": "inf",
+        "verbose": false,
+        "loader_params": {"batch_size": 128, "test_batch_size": 256, "shuffle_train": true, "normalize_input": true},
+        "method_params": {"bounded_input": true, "bound_type": "crown-interval"}
+    },
+    "models": [
+        {
+            "model_id": "IBP_large",
+            "model_class": "IBP_large",
+            "model_params": {"in_ch": 3, "in_dim": 32, "linear_size": 512}
+        }
+    ]
+}
+

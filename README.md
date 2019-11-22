@@ -2,16 +2,17 @@ CROWN-IBP: Towards Stable and Efficient Training of Verifiably Robust Neural Net
 ========================
 
 CROWN-IBP is a *certified defense* to adversarial examples, which combines a
-tight linear relaxation based verification bound 
-([CROWN](http://arxiv.org/pdf/1811.00866.pdf)) with the non-linear and 
-efficient interval bound propagate ([IBP](https://arxiv.org/pdf/1810.12715.pdf)) 
-training method.  We achieved state-of-the-art *verified* (certified) error on MNIST: **7.46\%** at
-`epsilon=0.3` and **12.96\%** at `epsilon=0.4` (L\_infinity norm distortion). 
-The verified error is even lower than the unverified PGD error
-(around **12\%** at `epsilon=0.3`) provided by [Adversarial training by Madry et
-al.](https://github.com/MadryLab/mnist_challenge) using PGD-based adversarial
-training. More empirical results and algorithm details of CROWN-IBP can be 
-found in our paper:
+tight linear relaxation based verification bound
+([CROWN](http://arxiv.org/pdf/1811.00866.pdf)) with the non-linear and
+efficient interval bound propagate
+([IBP](https://arxiv.org/pdf/1810.12715.pdf)) training method.  We achieved
+state-of-the-art *verified* (certified) error on MNIST and CIFAR: for MNIST,
+**6.68\%** at `epsilon=0.3` and **12.46\%** at `epsilon=0.4` (L\_infinity norm
+distortion); and for CIFAR, **67.11\%** at `epsilon=8/255` and **45.50\%** at
+`epsilon=2/255`. The MNIST verified error is even lower than the unverified PGD
+error (around **12\%** at `epsilon=0.3`) provided by [PGD Adversarial training
+(Madry et al.)](https://github.com/MadryLab/mnist_challenge). More empirical
+results and algorithm details of CROWN-IBP can be found in our paper:
 
 Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Duane Boning, and Cho-Jui Hsieh, "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([**https://arxiv.org/abs/1906.06316**](https://arxiv.org/abs/1906.06316))
 
@@ -20,14 +21,25 @@ Our repository provides **high quality PyTorch implementations** of
 2018), CROWN-IBP (our algorithm), [Convex Adversarial
 Polytope](https://github.com/locuslab/convex_adversarial) (Wong et al., 2018)
 and (ordinary) [CROWN](https://github.com/huanzhang12/RecurJac-and-CROWN)
-(Zhang et al., 2018).
+(Zhang et al., 2018). We implemented **Multi-GPU** and large batch training to
+scale CROWN-IBP to large models.
 
 News
 ---------
 
-* Oct 10, 2019: Ordinary CROWN bounds have been added for verification propose.
-  See [instructions](#compute-crown-verified-errors). The implementation takes
-  advantage of CNN on GPUs and is efficient for verification.
+* Nov 21, 2019: We released [pretrained SOTA
+  models](https://download.huan-zhang.com/models/crown-ibp/models_crown-ibp_dm-large.tar.gz).
+  On MNIST we can achieve
+  6.68% verified error at `epsilon=0.3` and on CIFAR we can achieve 67.11%
+  verified error at `epsilon=8/255`. Follow [instructions here](#pre-trained-models).
+* Nov 21, 2019: **Multi-GPU** training support. It is now possible to scale
+  CROWN-IBP to the same Large model (trained on 32 TPUs) reported by Gowal et
+  al., 2018. The [largest CIFAR model](config/cifar_dm-large_8_255.json) takes
+  about 1 day to train on 4x 2080 Ti GPUs.
+* Oct 10, 2019: Ordinary **CROWN bounds** have been added for verification
+  propose.  See [instructions](#compute-crown-verified-errors). The
+  implementation takes advantage of **CNN on GPUs** and is efficient for
+  verification.
 * July 14, 2019: Code has been further optimized and CROWN-IBP training is
   roughly 2-3 times faster than before. For reproducing paper results you can
   checkout the old code in ['paper-v1'](../../tree/paper-v1) branch. Otherwise
@@ -48,12 +60,12 @@ attacks that can break a PGD-trained model.
 
 The *certified robustness* of a model can be evaluated using *verified error*,
 which is a guaranteed *upper bound* of test error under *any* attack.
-CROWN-IBP can achieve **7.46\%** verified error on MNIST test set at
+CROWN-IBP can achieve **6.68\%** verified error on MNIST test set at
 `epsilon=0.3`.  The verified error is even lower than the unverified PGD error
-(around **12\%**) provided by [Adversarial training by Madry et
-al.](https://github.com/MadryLab/mnist_challenge) using PGD-based adversarial
-training. Previous convex relaxation based method by [Wong et
-al.](https://github.com/locuslab/convex_adversarial) has about **40\%**
+(around **12\%**) provided by [Adversarial
+training](https://github.com/MadryLab/mnist_challenge) using PGD-based
+adversarial training. Previous convex relaxation based method by [Wong et
+al.](https://github.com/locuslab/convex_adversarial) has about 30\% to 40\%
 verified error.
 
 CROWN-IBP combines [Interval Bound Propagation
@@ -80,7 +92,7 @@ also produces models with worse verified error due to over-regularization.
 Getting Started with the Code
 ---------
 
-Our program is tested on Pytorch 1.1 and Python 3.6. 
+Our program is tested on Pytorch 1.3.0 and Python 3.6/3.7. 
 
 We have all training parameters included in JSON files, under the `config` directory.
 We provide configuration files which can reproduce all CROWN-IBP models in our paper.
@@ -90,75 +102,133 @@ To train CROWN-IBP on MNIST, 10 small models, run:
 python train.py --config config/mnist_crown.json
 ```
 
-To train CROWN-IBP on MNIST, 8 large models, run:
+To train CROWN-IBP on MNIST, 8 medium models, run:
 ```bash
 python train.py --config config/mnist_crown_large.json
 ```
 
-You will also find configuration files for 9 small CIFAR models, 8 large CIFAR models,
-10 Fashion-MNIST small models and 8 Fashion-MNIST large models in `config` folder.
-
-We also implement baseline methods including Pure-IBP, Natural-IBP (Gowal et al. 2018)
-and Convex adversarial polytope (Wong et al. 2018). They can be used by adding command
-line parameters to override the training method defined in the JSON file. For example,
-
+To train CROWN-IBP on MNIST, using the very large model in Gowal et al. to achieve SOTA, run:
 ```bash
-# for Pure-IBP
-python train.py "training_params:method_params:bound_type=interval" --config config/mnist_crown.json 
-# for Natural-IBP (Gowal et al., 2018)
-python train.py "training_params:method=robust_natural" "training_params:method_params:bound_type=interval" --config config/mnist_crown.json
-# for Convex adversarial polytope (Wong et al. 2018)
-python train.py "training_params:method_params:bound_type=convex-adv" --config config/mnist_crown.json
+# This uses all GPUs by default.
+python train.py --config config/mnist_dm-large_0.4.json
 ```
 
-All hyperparameters can also be changed in the configuration JSON file.
+To train CROWN-IBP on CIFAR, using the very large model in Gowal et al. to achieve SOTA, run:
+```bash
+# This uses all GPUs by default.
+python train.py --config config/cifar_dm-large_8_255.json
+```
+
+You will also find configuration files for 9 small CIFAR models, 8 medium CIFAR models,
+10 Fashion-MNIST small models and 8 Fashion-MNIST medium models in `config` folder.
+All hyperparameters can be changed in the configuration JSON file.
 
 Pre-trained Models
 ----------------
 
-CROWN-IBP pretrained models used in our paper can be downloaded [here](https://download.huan-zhang.com/models/crown-ibp/models_crown-ibp.tar.gz):
+CROWN-IBP pretrained models (small and medium sized) used in our paper can be
+downloaded
+[here](https://download.huan-zhang.com/models/crown-ibp/models_crown-ibp.tar.gz).
+The very large model structure (used in Gowal et al., 2018) trained using
+CROWN-IBP can be downloaded
+[here](https://download.huan-zhang.com/models/crown-ibp/models_crown-ibp_dm-large.tar.gz).
 
 ```bash
+# Large SOTA models
+wget https://download.huan-zhang.com/models/crown-ibp/models_crown-ibp_dm-large.tar.gz
+tar xvf models_crown-ibp_dm-large.tar.gz
+# Small and medium sized models
 wget https://download.huan-zhang.com/models/crown-ibp/models_crown-ibp.tar.gz
 tar xvf models_crown-ibp.tar.gz
 ```
 
-The folder `crown-ibp_models` contains several directories, each one
-corresponding to a set of models and a `epsilon` value.  They can be evaluated
-using the script `eval.py`. For example, to evaluate the 8 large MNIST models
-under `epsilon=0.4` use this command:
+To evaluate the best (and largest) MNIST and CIFAR model (same model structure
+as in Gowal et al. 2018, referred to as "dm-large" in our paper), run:
 
 ```bash
-python eval.py "eval_params:epsilon=0.4" --config config/mnist_crown_large.json --path_prefix crown-ibp_models/mnist_0.4_mnist_crown_large
+# Evaluate MNIST with epsilon=0.3
+# The default epsilon for MNIST evaluation in config/mnist_dm-large_0.4.json is 0.3.
+python eval.py --config config/mnist_dm-large_0.4.json --path_prefix models_crown-ibp_dm-large
+# Evaluate MNIST with epsilon=0.4
+python eval.py "eval_params:epsilon=0.4" --config config/mnist_dm-large_0.4.json --path_prefix models_crown-ibp_dm-large
+# Evaluate CIFAR-10 with epsilon=8/255
+python eval.py --config config/cifar_dm-large_8_255.json  --path_prefix models_crown-ibp_dm-large
+# Evaluate CIFAR-10 with epsilon=2/255
+python eval.py --config config/cifar_dm-large_2_255.json  --path_prefix models_crown-ibp_dm-large
 ```
 
-The parameter `"eval_params:epsilon=0.4"` overrides the `epsilon` in configuration file,
-and the parameter `--path_prefix` changes the default path that stores models and logs.
+Note that the "dm-large"  models have slight different verified errors than the
+models reported in our paper (accuracy within +/-0.5%), which were trained
+using [Tensorflow](https://github.com/deepmind/interval-bound-propagation.git).
+The default `epsilon` for evaluation in `config/mnist_dm-large_0.4.json` is
+0.3. The parameter `"eval_params:epsilon=0.4"` overrides the `epsilon` in
+configuration file, and the parameter `--path_prefix` changes the default path
+that stores models and logs.
 
-Reproduce the State-of-the-art MNIST Defense
+The folder `crown-ibp_models` contains several directories, each one
+corresponding to a set of (relatively small) models and a `epsilon` value.
+They can also be evaluated using the script `eval.py`. For example:
+
+```bash
+# Evaluate the 8 medium MNIST models under epsilon=0.4
+python eval.py "eval_params:epsilon=0.4" --config config/mnist_crown_large.json --path_prefix crown-ibp_models/mnist_0.4_mnist_crown_large
+# Evaluate the 8 medium CIFAR models under epsilon=0.03137 (8/255)
+# No epsilon value is given explicitly, so the default in cifar_crown_large.json will be used
+python eval.py --config config/cifar_crown_large.json --path_prefix crown-ibp_models/cifar_crown_large_0.03137/
+```
+
+The script will report min, median and max verified errors across all models.
+
+Training options
 ----------------
 
-To train the best MNIST defense model at `epsilon=0.3`, run this command
+Training verified models using CROWN-IBP is easy: simply use `train.py` with a
+config file, which includes necessary training parameters. For example:
+
+```bash
+# Train the largest MNIST model ("dm-large")
+python train.py --config config/mnist_dm-large_0.4.json
+# Train the largest CIFAR-10 model ("dm-large")
+python train.py --config config/cifar_dm-large_8_255.json
+```
+
+Multiple models may be defined in a confg file, to train the a specific model,
+use the `--model_subset` argument:
 
 ```bash
 python train.py --config config/mnist_crown_large.json --model_subset 4
 ```
 
 The argument `--model_subset` selects the 4th model defined in configuration
-file, which is the largest model in our model pool. You should be able to
-achieve about 7.5% verified error after 100 epochs.  This is a large model, so
-training will be slower (roughly 1 hour). Note that our implementation of
-CROWN-IBP is still preliminary and not optimized, and further speedups can be
-achieved after code optimization.
-
-For `epsilon=0.4` run this command:
+file. To change perturbation `epsilon`, use the parameter
+`"training_params:epsilon=0.4"` which overrides the corresponding `epsilon`
+value in configuration file. Other parameters can be overridden in a similar
+manner. For `epsilon=0.4` run this command:
 
 ```bash
 python train.py "training_params:epsilon=0.4" --config config/mnist_crown_large.json --model_subset 4
 ```
 
-where the parameter `"training_params:epsilon=0.4"` overrides the corresponding
-`epsilon` value in configuration file.
+If you want to use multiple GPUs for training, set keyword `"multi_gpu"` under
+`"training_params"` section in configuration as true, or equivalently add
+`"training_params:multi_gpu=true"` in command line after `train.py`. Then the
+program uses all available GPUs in the system. To use less than all GPUs, set
+environment variable `CUDA_VISIBLE_DEVICES` before you run.
+
+We also implement baseline methods including IBP (Gowal et al. 2018) and Convex
+adversarial polytope (Wong et al. 2018). They can be used by adding command
+line parameters to override the training method defined in the JSON file. For
+example,
+
+```bash
+# for IBP (no kappa terms)
+python train.py "training_params:method_params:bound_type=interval" --config config/mnist_crown.json 
+# for IBP (with kappa terms as in Gowal et al., 2018)
+python train.py "training_params:method=robust_natural" "training_params:method_params:bound_type=interval" --config config/mnist_crown.json
+# for Convex adversarial polytope (Wong et al. 2018)
+python train.py "training_params:method_params:bound_type=convex-adv" --config config/mnist_crown.json
+```
+
 
 Training Your Own Robust Model Using CROWN-IBP
 -----------------
@@ -244,7 +314,7 @@ to 10.61%):
 python eval.py "eval_params:method_params:bound_opts:zero-lb=true" "eval_params:epsilon=0.3" "eval_params:loader_params:test_batch_size=128" "eval_params:method_params:bound_type=crown-full" --config config/mnist_crown.json --path_prefix crown-ibp_models/mnist_0.3_mnist_crown --model_subset 1
 ```
 
-Reproducing Paper Results
+Reproducing Paper Results on Different Kappa and Training Schedules
 -------------------
 
 In our paper, we evaluate training stability by setting different `epsilon`
@@ -256,15 +326,15 @@ To train CROBW-IBP on MNIST, 10 small models with `epsilon=0.3` and schedule len
 ```bash
 python train.py training_params:schedule_length=11 --config config/mnist_crown.json 
 ```
-To train Pure-IBP on MNIST, 10 small models with `epsilon=0.3` and schedule length as 10, run this command:
+To train IBP on MNIST with no natural CE loss, 10 small models with `epsilon=0.3` and schedule length as 10, run this command:
 ```bash
 python train.py training_params:schedule_length=11 training_params:method_params:bound_type=interval --config config/mnist_crown.json 
 ```
-To train Natural IBP with final `kappa=0.5` on MNIST, 10 small models with `epsilon=0.3` and schedule length as 10, run this command:
+To train IBP with final `kappa=0.5` on MNIST, 10 small models with `epsilon=0.3` and schedule length as 10, run this command:
 ```bash
 python train.py training_params:schedule_length=11 training_params:method_params:bound_type=interval training_params:method_params:final-kappa=0.5 training_params:method=robust_natural --config config/mnist_crown.json  
 ```
-To train Natural IBP with final `kappa=0` on MNIST, 10 small models with `epsilon=0.3` and schedule length as 10, run this command:
+To train IBP with final `kappa=0` on MNIST, 10 small models with `epsilon=0.3` and schedule length as 10, run this command:
 ```bash
 python train.py training_params:schedule_length=11 training_params:method_params:bound_type=interval training_params:method_params:final-kappa=0 training_params:method=robust_natural --config config/mnist_crown.json
 ```

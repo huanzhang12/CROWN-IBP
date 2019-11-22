@@ -8,16 +8,12 @@
 import sys
 import copy
 import torch
-from torch.nn import Sequential, Linear, ReLU, CrossEntropyLoss
 import numpy as np
-from datasets import loaders
-from model_defs import Flatten, model_mlp_any, model_cnn_1layer, model_cnn_2layer, model_cnn_4layer, model_cnn_3layer
 from bound_layers import BoundSequential
-import torch.optim as optim
 # from gpu_profile import gpu_profile
 import time
 from datetime import datetime
-
+from eps_scheduler import EpsilonScheduler
 from config import load_config, get_path, config_modelloader, config_dataloader
 from argparser import argparser
 from train import Train, Logger
@@ -38,9 +34,8 @@ def main(args):
         if "eval_params" in model_config:
             eval_config.update(model_config["eval_params"])
 
-        model = BoundSequential.convert(model, eval_config["method_params"]["bound_opts"])
+        model = BoundSequential.convert(model, eval_config["method_params"]["bound_opts"]) 
         model = model.cuda()
-
         # read training parameters from config file
         method = eval_config["method"]
         verbose = eval_config["verbose"]
@@ -59,7 +54,7 @@ def main(args):
         logger.log("Evaluating...")
         with torch.no_grad():
             # evaluate
-            robust_err, err = Train(model, 0, test_data, eps, eps, eps, norm, logger, verbose, False, None, method, **method_param)
+            robust_err, err = Train(model, 0, test_data, EpsilonScheduler("linear", 0, 0, eps, eps, 1), eps, norm, logger, verbose, False, None, method, **method_param)
         robust_errs.append(robust_err)
         errs.append(err)
 

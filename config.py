@@ -15,7 +15,7 @@ import numpy as np
 from datasets import loaders
 
 # from model_defs import add_feature_subsample, remove_feature_subsample
-from model_defs import add_feature_subsample, remove_feature_subsample, convert_conv2d_dense, save_checkpoint, load_checkpoint_to_mlpany
+from model_defs import convert_conv2d_dense, save_checkpoint, load_checkpoint_to_mlpany
 
 # Helper function to find a file with closest match
 def get_file_close(filename, ext, load = True):
@@ -117,24 +117,6 @@ def get_path(config, model_id, path_name, **kwargs):
         model_file = get_path(config, model_id, "model", load = False)
         os.makedirs(os.path.join(config["path_prefix"], config["models_path"]), exist_ok = True)
         return model_file.replace(".pth", "_test.log")
-    # temporary
-    if path_name == "model_alt":
-        model_file = os.path.join(config["path_prefix"], config["models_path"], "alt", model_id + ".pth")
-        return model_file
-    elif path_name == "bound":
-        os.makedirs(config["bounds_path"], exist_ok = True)
-        bound_file = os.path.join(config["bounds_path"], model_id)
-        if "train" in kwargs and kwargs["train"]:
-            bound_file += "_train.h5"
-        else:
-            bound_file += "_test.h5"
-        return bound_file
-    elif path_name == "boost_bound":
-        os.makedirs(config["bounds_path"], exist_ok = True)
-        bound_file = os.path.join(config["bounds_path"], model_id) + "_boost.h5"
-        return bound_file
-    elif path_name == "alpha":
-        return config["alpha_path"]
     else:
         raise RuntimeError("Unsupported path " + path_name)
 
@@ -158,10 +140,6 @@ def config_modelloader(config, load_pretrain = False, cuda = False):
         model_class = getattr(model_module, model_config["model_class"])
         model_params = model_config["model_params"]
         m = model_class(**model_params)
-        if "subsample" in model_config and model_config["subsample"]:
-            keep = model_config["subsample_prob"]
-            seed = model_config["subsample_seed"]
-            m = add_feature_subsample(m, config["channel"], config["dimension"], keep, seed)
         if cuda:
             m.cuda()
         if load_pretrain:
@@ -169,22 +147,25 @@ def config_modelloader(config, load_pretrain = False, cuda = False):
             #model_file += "_pretrain"
             print("Loading model file", model_file)
             checkpoint = torch.load(model_file)
-            if isinstance(checkpoint['state_dict'], list):
-                checkpoint['state_dict'] = checkpoint['state_dict'][0]
+            if isinstance(checkpoint["state_dict"], list):
+                checkpoint["state_dict"] = checkpoint["state_dict"][0]
             new_state_dict = {}
-            for k in checkpoint['state_dict'].keys():
+            for k in checkpoint["state_dict"].keys():
                 if "prev" in k:
                     pass
                 else:
-                    new_state_dict[k] = checkpoint['state_dict'][k]
-            checkpoint['state_dict'] = new_state_dict
+                    new_state_dict[k] = checkpoint["state_dict"][k]
+            checkpoint["state_dict"] = new_state_dict
+            
             """
             state_dict = m.state_dict()
-            state_dict.update(checkpoint['state_dict'])
+            state_dict.update(checkpoint["state_dict"])
             m.load_state_dict(state_dict)
-            # print(checkpoint['state_dict']['__mask_layer.weight'])
+            print(checkpoint["state_dict"]["__mask_layer.weight"])
             """
-            m.load_state_dict(checkpoint['state_dict'])
+
+            m.load_state_dict(checkpoint["state_dict"])
+            
         # print(m)
         models.append(m)
     return models, model_names
@@ -204,33 +185,29 @@ def config_modelloader_and_convert2mlp(config, load_pretrain = True):
         model_class = getattr(model_module, model_config["model_class"])
         model_params = model_config["model_params"]
         m = model_class(**model_params)
-        if "subsample" in model_config and model_config["subsample"]:
-            keep = model_config["subsample_prob"]
-            seed = model_config["subsample_seed"]
-            m = add_feature_subsample(m, config["channel"], config["dimension"], keep, seed)
         # m.cuda()
         if load_pretrain:
             model_file = get_path(config, model_id, "model")
             #model_file += "_pretrain"
             print("Loading model file", model_file)
             checkpoint = torch.load(model_file)
-            if isinstance(checkpoint['state_dict'], list):
-                checkpoint['state_dict'] = checkpoint['state_dict'][0]
+            if isinstance(checkpoint["state_dict"], list):
+                checkpoint["state_dict"] = checkpoint["state_dict"][0]
             new_state_dict = {}
-            for k in checkpoint['state_dict'].keys():
+            for k in checkpoint["state_dict"].keys():
                 if "prev" in k:
                     pass
                 else:
-                    new_state_dict[k] = checkpoint['state_dict'][k]
-            checkpoint['state_dict'] = new_state_dict
+                    new_state_dict[k] = checkpoint["state_dict"][k]
+            checkpoint["state_dict"] = new_state_dict
             """
             state_dict = m.state_dict()
-            state_dict.update(checkpoint['state_dict'])
+            state_dict.update(checkpoint["state_dict"])
             m.load_state_dict(state_dict)
-            # print(checkpoint['state_dict']['__mask_layer.weight'])
+            # print(checkpoint["state_dict"]["__mask_layer.weight"])
             """
 
-            m.load_state_dict(checkpoint['state_dict'])
+            m.load_state_dict(checkpoint["state_dict"])
             print("convert to dense w")
             dense_m = convert_conv2d_dense(m)
             in_dim = model_params["in_dim"]

@@ -44,19 +44,22 @@ def mnist_loaders(dataset, batch_size, shuffle_train = True, shuffle_test = Fals
         batch_size = test_batch_size
     test_loader = torch.utils.data.DataLoader(mnist_test, batch_size=batch_size, shuffle=shuffle_test, pin_memory=True, num_workers=min(multiprocessing.cpu_count(),2))
     std = [1.0]
+    mean = [0.0]
     train_loader.std = std
     test_loader.std = std
+    train_loader.mean = mean
+    test_loader.mean = mean
     return train_loader, test_loader
 
 def cifar_loaders(batch_size, shuffle_train = True, shuffle_test = False, train_random_transform = False, normalize_input = False, num_examples = None, test_batch_size=None): 
     if normalize_input:
         std = [0.2023, 0.1994, 0.2010]
-        normalize = transforms.Normalize(mean = [0.4914, 0.4822, 0.4465],
-                                          std = std)
+        mean = [0.4914, 0.4822, 0.4465]
+        normalize = transforms.Normalize(mean = mean, std = std)
     else:
         std = [1.0, 1.0, 1.0]
-        normalize = transforms.Normalize(mean=[0, 0, 0],
-                                         std=std)
+        mean = [0, 0, 0]
+        normalize = transforms.Normalize(mean = mean, std = std)
     if train_random_transform:
         if normalize_input:
             train = datasets.CIFAR10('./data', train=True, download=True, 
@@ -92,18 +95,19 @@ def cifar_loaders(batch_size, shuffle_train = True, shuffle_test = False, train_
         shuffle=shuffle_test, pin_memory=True, num_workers=min(multiprocessing.cpu_count(),6))
     train_loader.std = std
     test_loader.std = std
+    train_loader.mean = mean
+    test_loader.mean = mean
     return train_loader, test_loader
 
 def svhn_loaders(batch_size, shuffle_train = True, shuffle_test = False, train_random_transform = False, normalize_input = False, num_examples = None, test_batch_size=None): 
     if normalize_input:
         mean = [0.43768206, 0.44376972, 0.47280434] 
         std = [0.19803014, 0.20101564, 0.19703615]
-        normalize = transforms.Normalize(mean = mean,
-                                          std = std)
+        normalize = transforms.Normalize(mean = mean, std = std)
     else:
         std = [1.0, 1.0, 1.0]
-        normalize = transforms.Normalize(mean=[0, 0, 0],
-                                         std=std)
+        mean = [0, 0, 0]
+        normalize = transforms.Normalize(mean = mean, std = std)
     if train_random_transform:
         if normalize_input:
             train = datasets.SVHN('./data', split='train', download=True, 
@@ -137,6 +141,8 @@ def svhn_loaders(batch_size, shuffle_train = True, shuffle_test = False, train_r
         shuffle=shuffle_test, pin_memory=True, num_workers=min(multiprocessing.cpu_count(),6))
     train_loader.std = std
     test_loader.std = std
+    train_loader.mean = mean
+    test_loader.mean = mean
     mean, std = get_stats(train_loader)
     print('dataset mean = ', mean.numpy(), 'std = ', std.numpy())
     return train_loader, test_loader
