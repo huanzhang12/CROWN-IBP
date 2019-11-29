@@ -10,11 +10,11 @@ state-of-the-art *verified* (certified) error on MNIST and CIFAR: for MNIST,
 **6.68\%** at `epsilon=0.3` and **12.46\%** at `epsilon=0.4` (L\_infinity norm
 distortion); and for CIFAR, **67.11\%** at `epsilon=8/255` and **45.50\%** at
 `epsilon=2/255`. The MNIST verified error is even lower than the unverified PGD
-error (around **12\%** at `epsilon=0.3`) provided by [PGD Adversarial training
-(Madry et al.)](https://github.com/MadryLab/mnist_challenge). More empirical
+error (around 12% at `epsilon=0.3`) provided by PGD Adversarial training
+[(Madry et al.)](https://github.com/MadryLab/mnist_challenge). More empirical
 results and algorithm details of CROWN-IBP can be found in our paper:
 
-Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Duane Boning, and Cho-Jui Hsieh, "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([**https://arxiv.org/abs/1906.06316**](https://arxiv.org/abs/1906.06316))
+Huan Zhang, Hongge Chen, Chaowei Xiao, Sven Gowal, Robert Stanforth, Bo Li, Duane Boning, and Cho-Jui Hsieh, "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([**https://arxiv.org/abs/1906.06316**](https://arxiv.org/abs/1906.06316))
 
 Our repository provides **high quality PyTorch implementations** of
 [IBP](https://github.com/deepmind/interval-bound-propagation) (Gowal et al.,
