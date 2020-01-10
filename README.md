@@ -14,7 +14,7 @@ error (around 12% at `epsilon=0.3`) provided by PGD Adversarial training
 [(Madry et al.)](https://github.com/MadryLab/mnist_challenge). More empirical
 results and algorithm details of CROWN-IBP can be found in our paper:
 
-Huan Zhang, Hongge Chen, Chaowei Xiao, Sven Gowal, Robert Stanforth, Bo Li, Duane Boning, and Cho-Jui Hsieh, "Towards Stable and Efficient Training of Verifiably Robust Neural Networks" ([**https://arxiv.org/abs/1906.06316**](https://arxiv.org/abs/1906.06316))
+Huan Zhang, Hongge Chen, Chaowei Xiao, Sven Gowal, Robert Stanforth, Bo Li, Duane Boning, and Cho-Jui Hsieh, ["Towards Stable and Efficient Training of Verifiably Robust Neural Networks"](https://openreview.net/pdf?id=Skxuk1rFwB), ICLR 2020
 
 Our repository provides **high quality PyTorch implementations** of
 [IBP](https://github.com/deepmind/interval-bound-propagation) (Gowal et al.,
@@ -23,6 +23,8 @@ Polytope](https://github.com/locuslab/convex_adversarial) (Wong et al., 2018)
 and (ordinary) [CROWN](https://github.com/huanzhang12/RecurJac-and-CROWN)
 (Zhang et al., 2018). We implemented **Multi-GPU** and large batch training to
 scale CROWN-IBP to large models.
+
+A TensorFlow implementation of CROWN-IBP is provided by [DeepMind](https://github.com/deepmind/interval-bound-propagation).
 
 News
 ---------
@@ -41,9 +43,7 @@ News
   implementation takes advantage of **CNN on GPUs** and is efficient for
   verification.
 * July 14, 2019: Code has been further optimized and CROWN-IBP training is
-  roughly 2-3 times faster than before. For reproducing paper results you can
-  checkout the old code in ['paper-v1'](../../tree/paper-v1) branch. Otherwise
-  it is recommended to use this new version.
+  roughly 2-3 times faster than before.
 * Jun 8, 2019: Initial release.
 
 Intro
