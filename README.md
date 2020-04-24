@@ -3,14 +3,13 @@ CROWN-IBP: Towards Stable and Efficient Training of Verifiably Robust Neural Net
 
 CROWN-IBP is a *certified defense* to adversarial examples, which combines a
 tight linear relaxation based verification bound
-([CROWN](http://arxiv.org/pdf/1811.00866.pdf)) with the non-linear and
-efficient interval bound propagate
+([CROWN](http://arxiv.org/pdf/1811.00866.pdf)) with the efficient interval bound propagation
 ([IBP](https://arxiv.org/pdf/1810.12715.pdf)) training method.  We achieved
 state-of-the-art *verified* (certified) error on MNIST and CIFAR: for MNIST,
 **6.68\%** at `epsilon=0.3` and **12.46\%** at `epsilon=0.4` (L\_infinity norm
 distortion); and for CIFAR, **67.11\%** at `epsilon=8/255` and **45.50\%** at
 `epsilon=2/255`. The MNIST verified error is even lower than the unverified PGD
-error (around 12% at `epsilon=0.3`) provided by PGD Adversarial training
+error (around 12% at `epsilon=0.3`) by 
 [(Madry et al.)](https://github.com/MadryLab/mnist_challenge). More empirical
 results and algorithm details of CROWN-IBP can be found in our paper:
 
@@ -24,11 +23,19 @@ and (ordinary) [CROWN](https://github.com/huanzhang12/RecurJac-and-CROWN)
 (Zhang et al., 2018). We implemented **Multi-GPU** and large batch training to
 scale CROWN-IBP to large models.
 
+If you want to apply CROWN-IBP to more general NN architectures (e.g.,
+**ResNet**, **LSTM** and **Transformer**), you can use the new implementation
+based on the [auto_LiRPA library](https://github.com/KaidiXu/auto_LiRPA).
+`auto_LiRPA` is a powerful tool for computing linear relaxation based
+perturbation analysis (e.g., CROWN) for general computational graphs.
+
 A TensorFlow implementation of CROWN-IBP is provided by [DeepMind](https://github.com/deepmind/interval-bound-propagation).
 
 News
 ---------
-
+* Apr 24, 2020: A new implementation of CROWN-IBP on more neural network
+  architectures (**ResNet**, **LSTM**, **Transformer**) can be found in the
+  [auto_LiRPA library](https://github.com/KaidiXu/auto_LiRPA).
 * Nov 21, 2019: We released [pretrained SOTA
   models](https://download.huan-zhang.com/models/crown-ibp/models_crown-ibp_dm-large.tar.gz).
   On MNIST we can achieve
