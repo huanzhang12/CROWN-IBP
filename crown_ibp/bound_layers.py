@@ -9,7 +9,7 @@ import torch
 import numpy as np
 from torch.nn import DataParallel
 from torch.nn import Sequential, Conv2d, Linear, ReLU
-from model_defs import Flatten, model_mlp_any
+from crown_ibp.model_defs import Flatten, model_mlp_any
 import torch.nn.functional as F
 from itertools import chain
 import logging

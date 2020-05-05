@@ -8,10 +8,10 @@
 import numpy as np
 import torch
 from argparser import argparser
-from pgd import pgd
+from crown_ibp.pgd import pgd
 import os
 import sys
-from config import load_config, config_dataloader, config_modelloader
+from crown_ibp.config import load_config, config_dataloader, config_modelloader
 
 
 if __name__ == '__main__':

@@ -11,7 +11,7 @@
 import torch
 import torch.nn as nn
 
-from model_defs import Flatten
+from crown_ibp.model_defs import Flatten
 
 def IBP_large(in_ch, in_dim, linear_size=512): 
     model = nn.Sequential(

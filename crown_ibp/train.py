@@ -10,16 +10,16 @@ import copy
 import torch
 from torch.nn import Sequential, Linear, ReLU, CrossEntropyLoss
 import numpy as np
-from datasets import loaders
-from bound_layers import BoundSequential, BoundLinear, BoundConv2d, BoundDataParallel
+from crown_ibp.datasets import loaders
+from crown_ibp.bound_layers import BoundSequential, BoundLinear, BoundConv2d, BoundDataParallel
 import torch.optim as optim
 # from gpu_profile import gpu_profile
 import time
 from datetime import datetime
-from convex_adversarial import DualNetwork
-from eps_scheduler import EpsilonScheduler
-from config import load_config, get_path, config_modelloader, config_dataloader, update_dict
-from argparser import argparser
+from crown_ibp.convex_adversarial import DualNetwork
+from crown_ibp.eps_scheduler import EpsilonScheduler
+from crown_ibp.config import load_config, get_path, config_modelloader, config_dataloader, update_dict
+from crown_ibp.argparser import argparser
 # sys.settrace(gpu_profile)
 
 

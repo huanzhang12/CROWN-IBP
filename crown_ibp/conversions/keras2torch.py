@@ -48,11 +48,6 @@ def keras2torch(keras_model, output):
     return torch_model
 
 def get_keras_model(input):
-    data = MNIST()
-    n_data = 500
-    pred_data = data.test_data[:n_data]
-    pred_label = data.test_labels[:n_data]
-
     weight_dims, activation, activation_param, _ = get_model_meta(input)
     keras_model = NLayerModel(weight_dims[:-1], input, activation=activation, activation_param=activation_param)
     return keras_model
@@ -67,6 +62,11 @@ if __name__ == '__main__':
     torch_model = keras2torch(keras_model, args.output)
 
     print(torch_model)
+
+    data = MNIST()
+    n_data = 500
+    pred_data = data.test_data[:n_data]
+    pred_label = data.test_labels[:n_data]
 
     tf_predict = keras_model.model.predict(pred_data)
     torch_predict = torch_model(torch.Tensor(pred_data)).detach().numpy()

@@ -10,10 +10,10 @@ import tensorflow as tf
 
 from tensorflow.keras.layers import Dense as TFDense, Activation as TFActivation, Flatten as TFFlatten
 from keras.layers import Dense as KerasDense, Activation as KerasActivation, Flatten as KerasFlatten
-from mnist_cifar_models import get_model_meta, NLayerModel
+from crown_ibp.conversions.mnist_cifar_models import get_model_meta, NLayerModel
 
-from setup_mnist import MNIST
-from utils import show
+from crown_ibp.conversions.setup_mnist import MNIST
+from crown_ibp.conversions.utils import show
 from PIL import Image
 import argparse
 
