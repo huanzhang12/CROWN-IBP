@@ -13,21 +13,26 @@ error (around 12% at `epsilon=0.3`) by
 [(Madry et al.)](https://github.com/MadryLab/mnist_challenge). More empirical
 results and algorithm details of CROWN-IBP can be found in our paper:
 
-Huan Zhang, Hongge Chen, Chaowei Xiao, Sven Gowal, Robert Stanforth, Bo Li, Duane Boning, and Cho-Jui Hsieh, ["Towards Stable and Efficient Training of Verifiably Robust Neural Networks"](https://openreview.net/pdf?id=Skxuk1rFwB), ICLR 2020
+*Huan Zhang, Hongge Chen, Chaowei Xiao, Sven Gowal, Robert Stanforth, Bo Li, Duane Boning, and Cho-Jui Hsieh, ["Towards Stable and Efficient Training of Verifiably Robust Neural Networks"](https://openreview.net/pdf?id=Skxuk1rFwB), ICLR 2020*
 
-Our repository provides **high quality PyTorch implementations** of
+Our repository provides high quality PyTorch implementations of
 [IBP](https://github.com/deepmind/interval-bound-propagation) (Gowal et al.,
 2018), CROWN-IBP (our algorithm), [Convex Adversarial
 Polytope](https://github.com/locuslab/convex_adversarial) (Wong et al., 2018)
 and (ordinary) [CROWN](https://github.com/huanzhang12/RecurJac-and-CROWN)
-(Zhang et al., 2018). We implemented **Multi-GPU** and large batch training to
-scale CROWN-IBP to large models.
+(Zhang et al., 2018) with **Multi-GPU** support.
 
 If you want to apply CROWN-IBP to more general NN architectures (e.g.,
-**ResNet**, **LSTM** and **Transformer**), you can use the new implementation
+**ResNet/DenseNet**, **LSTM** and **Transformer**), use the new implementation
 based on the [auto_LiRPA library](https://github.com/KaidiXu/auto_LiRPA).
 `auto_LiRPA` is a powerful tool for computing linear relaxation based
 perturbation analysis (e.g., CROWN) for general computational graphs.
+
+We recently proposed a new technique, *loss fusion*, which further improves the
+efficiency of CROWN-IBP. We can now use the tight CROWN-IBP bounds for training
+at the same asympototic complexity as IBP, and scale to large datasets
+including downscaled **ImageNet**. More details:
+[https://arxiv.org/pdf/2002.12920.pdf](https://arxiv.org/pdf/2002.12920.pdf)
 
 A TensorFlow implementation of CROWN-IBP is provided by [DeepMind](https://github.com/deepmind/interval-bound-propagation).
 
