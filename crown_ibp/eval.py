@@ -9,14 +9,14 @@ import sys
 import copy
 import torch
 import numpy as np
-from bound_layers import BoundSequential
+from crown_ibp.bound_layers import BoundSequential
 # from gpu_profile import gpu_profile
 import time
 from datetime import datetime
-from eps_scheduler import EpsilonScheduler
-from config import load_config, get_path, config_modelloader, config_dataloader
-from argparser import argparser
-from train import Train, Logger
+from crown_ibp.eps_scheduler import EpsilonScheduler
+from crown_ibp.config import load_config, get_path, config_modelloader, config_dataloader
+from crown_ibp.argparser import argparser
+from crown_ibp.train import Train, Logger
 # sys.settrace(gpu_profile)
 
 

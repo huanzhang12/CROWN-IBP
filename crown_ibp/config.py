@@ -12,10 +12,10 @@ import copy
 import importlib
 import torch
 import numpy as np
-from datasets import loaders
+from crown_ibp.datasets import loaders
 
 # from model_defs import add_feature_subsample, remove_feature_subsample
-from model_defs import convert_conv2d_dense, save_checkpoint, load_checkpoint_to_mlpany
+from crown_ibp.model_defs import convert_conv2d_dense, save_checkpoint, load_checkpoint_to_mlpany
 
 # Helper function to find a file with closest match
 def get_file_close(filename, ext, load = True):

@@ -104,6 +104,12 @@ also produces models with worse verified error due to over-regularization.
 Getting Started with the Code
 ---------
 
+Install
+
+```bash
+python -m pip install -e .
+```
+
 Our program is tested on Pytorch 1.3.0 and Python 3.6/3.7. 
 
 We have all training parameters included in JSON files, under the `config` directory.
@@ -111,24 +117,24 @@ We provide configuration files which can reproduce all CROWN-IBP models in our p
 
 To train CROWN-IBP on MNIST, 10 small models, run:
 ```bash
-python train.py --config config/mnist_crown.json
+python -m crown_ibp.train --config config/mnist_crown.json
 ```
 
 To train CROWN-IBP on MNIST, 8 medium models, run:
 ```bash
-python train.py --config config/mnist_crown_large.json
+python -m crown_ibp.train --config config/mnist_crown_large.json
 ```
 
 To train CROWN-IBP on MNIST, using the very large model in Gowal et al. to achieve SOTA, run:
 ```bash
 # This uses all GPUs by default.
-python train.py --config config/mnist_dm-large_0.4.json
+python -m crown_ibp.train --config config/mnist_dm-large_0.4.json
 ```
 
 To train CROWN-IBP on CIFAR, using the very large model in Gowal et al. to achieve SOTA, run:
 ```bash
 # This uses all GPUs by default.
-python train.py --config config/cifar_dm-large_8_255.json
+python -m crown_ibp.train --config config/cifar_dm-large_8_255.json
 ```
 
 You will also find configuration files for 9 small CIFAR models, 8 medium CIFAR models,
@@ -160,13 +166,13 @@ as in Gowal et al. 2018, referred to as "dm-large" in our paper), run:
 ```bash
 # Evaluate MNIST with epsilon=0.3
 # The default epsilon for MNIST evaluation in config/mnist_dm-large_0.4.json is 0.3.
-python eval.py --config config/mnist_dm-large_0.4.json --path_prefix models_crown-ibp_dm-large
+python -m crown_ibp.eval --config config/mnist_dm-large_0.4.json --path_prefix models_crown-ibp_dm-large
 # Evaluate MNIST with epsilon=0.4
-python eval.py "eval_params:epsilon=0.4" --config config/mnist_dm-large_0.4.json --path_prefix models_crown-ibp_dm-large
+python -m crown_ibp.eval "eval_params:epsilon=0.4" --config config/mnist_dm-large_0.4.json --path_prefix models_crown-ibp_dm-large
 # Evaluate CIFAR-10 with epsilon=8/255
-python eval.py --config config/cifar_dm-large_8_255.json  --path_prefix models_crown-ibp_dm-large
+python -m crown_ibp.eval --config config/cifar_dm-large_8_255.json  --path_prefix models_crown-ibp_dm-large
 # Evaluate CIFAR-10 with epsilon=2/255
-python eval.py --config config/cifar_dm-large_2_255.json  --path_prefix models_crown-ibp_dm-large
+python -m crown_ibp.eval --config config/cifar_dm-large_2_255.json  --path_prefix models_crown-ibp_dm-large
 ```
 
 Note that the "dm-large"  models have slight different verified errors than the
@@ -183,10 +189,10 @@ They can also be evaluated using the script `eval.py`. For example:
 
 ```bash
 # Evaluate the 8 medium MNIST models under epsilon=0.4
-python eval.py "eval_params:epsilon=0.4" --config config/mnist_crown_large.json --path_prefix crown-ibp_models/mnist_0.4_mnist_crown_large
+python -m crown_ibp.eval "eval_params:epsilon=0.4" --config config/mnist_crown_large.json --path_prefix crown-ibp_models/mnist_0.4_mnist_crown_large
 # Evaluate the 8 medium CIFAR models under epsilon=0.03137 (8/255)
 # No epsilon value is given explicitly, so the default in cifar_crown_large.json will be used
-python eval.py --config config/cifar_crown_large.json --path_prefix crown-ibp_models/cifar_crown_large_0.03137/
+python -m crown_ibp.eval --config config/cifar_crown_large.json --path_prefix crown-ibp_models/cifar_crown_large_0.03137/
 ```
 
 The script will report min, median and max verified errors across all models.
@@ -199,16 +205,16 @@ config file, which includes necessary training parameters. For example:
 
 ```bash
 # Train the largest MNIST model ("dm-large")
-python train.py --config config/mnist_dm-large_0.4.json
+python -m crown_ibp.train --config config/mnist_dm-large_0.4.json
 # Train the largest CIFAR-10 model ("dm-large")
-python train.py --config config/cifar_dm-large_8_255.json
+python -m crown_ibp.train --config config/cifar_dm-large_8_255.json
 ```
 
 Multiple models may be defined in a confg file, to train the a specific model,
 use the `--model_subset` argument:
 
 ```bash
-python train.py --config config/mnist_crown_large.json --model_subset 4
+python -m crown_ibp.train --config config/mnist_crown_large.json --model_subset 4
 ```
 
 The argument `--model_subset` selects the 4th model defined in configuration
@@ -218,7 +224,7 @@ value in configuration file. Other parameters can be overridden in a similar
 manner. For `epsilon=0.4` run this command:
 
 ```bash
-python train.py "training_params:epsilon=0.4" --config config/mnist_crown_large.json --model_subset 4
+python -m crown_ibp.train "training_params:epsilon=0.4" --config config/mnist_crown_large.json --model_subset 4
 ```
 
 If you want to use multiple GPUs for training, set keyword `"multi_gpu"` under
@@ -234,11 +240,11 @@ example,
 
 ```bash
 # for IBP (no kappa terms)
-python train.py "training_params:method_params:bound_type=interval" --config config/mnist_crown.json 
+python -m crown_ibp.train "training_params:method_params:bound_type=interval" --config config/mnist_crown.json 
 # for IBP (with kappa terms as in Gowal et al., 2018)
-python train.py "training_params:method=robust_natural" "training_params:method_params:bound_type=interval" --config config/mnist_crown.json
+python -m crown_ibp.train "training_params:method=robust_natural" "training_params:method_params:bound_type=interval" --config config/mnist_crown.json
 # for Convex adversarial polytope (Wong et al. 2018)
-python train.py "training_params:method_params:bound_type=convex-adv" --config config/mnist_crown.json
+python -m crown_ibp.train "training_params:method_params:bound_type=convex-adv" --config config/mnist_crown.json
 ```
 
 
@@ -268,7 +274,7 @@ dictionary of all parameters passing to the function that creates the model.
 Then your will be able to train with CROWN-IBP with your JSON:
 
 ```bash
-python train.py --config your_config.json
+python -m crown_ibp.train --config your_config.json
 ```
 
 
@@ -290,7 +296,7 @@ bounds are memory intensive to compute.
 Example:
 
 ```
-python eval.py "eval_params:epsilon=0.3" "eval_params:loader_params:test_batch_size=128" "eval_params:method_params:bound_type=crown-full" --config config/mnist_crown.json --path_prefix crown-ibp_models/mnist_0.3_mnist_crown --model_subset 1
+python -m crown_ibp.eval "eval_params:epsilon=0.3" "eval_params:loader_params:test_batch_size=128" "eval_params:method_params:bound_type=crown-full" --config config/mnist_crown.json --path_prefix crown-ibp_models/mnist_0.3_mnist_crown --model_subset 1
 ```
 
 Note that CROWN bounds are relatively loose on (CROWN-)IBP trained models; the
@@ -323,7 +329,7 @@ Example (setting `zero-lb` to `true` to improve CROWN verified error from 53.31%
 to 10.61%):
 
 ```
-python eval.py "eval_params:method_params:bound_opts:zero-lb=true" "eval_params:epsilon=0.3" "eval_params:loader_params:test_batch_size=128" "eval_params:method_params:bound_type=crown-full" --config config/mnist_crown.json --path_prefix crown-ibp_models/mnist_0.3_mnist_crown --model_subset 1
+python -m crown_ibp.eval "eval_params:method_params:bound_opts:zero-lb=true" "eval_params:epsilon=0.3" "eval_params:loader_params:test_batch_size=128" "eval_params:method_params:bound_type=crown-full" --config config/mnist_crown.json --path_prefix crown-ibp_models/mnist_0.3_mnist_crown --model_subset 1
 ```
 
 Reproducing Paper Results on Different Kappa and Training Schedules
@@ -336,19 +342,19 @@ configuration file parameters as shown below.
 
 To train CROBW-IBP on MNIST, 10 small models with `epsilon=0.3` and schedule length as 10, run this command:
 ```bash
-python train.py training_params:schedule_length=11 --config config/mnist_crown.json 
+python -m crown_ibp.train training_params:schedule_length=11 --config config/mnist_crown.json 
 ```
 To train IBP on MNIST with no natural CE loss, 10 small models with `epsilon=0.3` and schedule length as 10, run this command:
 ```bash
-python train.py training_params:schedule_length=11 training_params:method_params:bound_type=interval --config config/mnist_crown.json 
+python -m crown_ibp.train training_params:schedule_length=11 training_params:method_params:bound_type=interval --config config/mnist_crown.json 
 ```
 To train IBP with final `kappa=0.5` on MNIST, 10 small models with `epsilon=0.3` and schedule length as 10, run this command:
 ```bash
-python train.py training_params:schedule_length=11 training_params:method_params:bound_type=interval training_params:method_params:final-kappa=0.5 training_params:method=robust_natural --config config/mnist_crown.json  
+python -m crown_ibp.train training_params:schedule_length=11 training_params:method_params:bound_type=interval training_params:method_params:final-kappa=0.5 training_params:method=robust_natural --config config/mnist_crown.json  
 ```
 To train IBP with final `kappa=0` on MNIST, 10 small models with `epsilon=0.3` and schedule length as 10, run this command:
 ```bash
-python train.py training_params:schedule_length=11 training_params:method_params:bound_type=interval training_params:method_params:final-kappa=0 training_params:method=robust_natural --config config/mnist_crown.json
+python -m crown_ibp.train training_params:schedule_length=11 training_params:method_params:bound_type=interval training_params:method_params:final-kappa=0 training_params:method=robust_natural --config config/mnist_crown.json
 ```
 
 References
